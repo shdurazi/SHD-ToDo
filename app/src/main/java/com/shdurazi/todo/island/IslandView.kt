@@ -80,6 +80,7 @@ class IslandView(context: Context) : View(context) {
     /** Called (once) if drawing fails, so that the controller can take the island down instead of crashing the app. */
     var onError: ((Throwable) -> Unit)? = null
     private var broken = false
+    private var covered = false
 
     private var model: Model? = null
     private var geo: Geo? = null
@@ -202,6 +203,34 @@ class IslandView(context: Context) : View(context) {
         invalidate()
     }
 
+    /**
+     * While another window draws the island instead of this one (the pill's window, while the card's window is open),
+     * this one draws nothing but stays where it is: windows are never resized or moved, because the system keeps showing
+     * the old picture at the new place until the next frame has been drawn.
+     */
+    fun setCovered(on: Boolean) {
+        covered = on
+        invalidate()
+    }
+
+    /** Runs [action] on the main thread after [n] more frames have been drawn (the window needs a moment to show up). */
+    fun afterFrames(n: Int, action: () -> Unit) {
+        var left = n
+        val step = object : Runnable {
+            override fun run() {
+                left--
+                if (left <= 0) {
+                    action()
+                } else {
+                    invalidate()
+                    postOnAnimation(this)
+                }
+            }
+        }
+        invalidate()
+        postOnAnimation(step)
+    }
+
     fun expand() {
         if (expandedTarget && morph >= 0.99f && (morphAnim?.isRunning != true)) return
         expandedTarget = true
@@ -231,7 +260,10 @@ class IslandView(context: Context) : View(context) {
     }
 
     fun collapse() {
-        if (!expandedTarget && morph <= 0.001f) return
+        if (!expandedTarget && morph <= 0.001f) {
+            onCollapsed?.invoke()
+            return
+        }
         expandedTarget = false
         morphAnim?.cancel()
         val a = ValueAnimator.ofFloat(morph, 0f)
@@ -296,7 +328,7 @@ class IslandView(context: Context) : View(context) {
 
     // ---------------------------------------------------------------- drawing
     override fun onDraw(canvas: Canvas) {
-        if (broken) return
+        if (broken || covered) return
         try {
             drawAll(canvas)
         } catch (t: Throwable) {
@@ -535,15 +567,19 @@ class IslandView(context: Context) : View(context) {
         val textW = 54f * d
         val ringCx: Float
         val textCx: Float
+        val textRoom: Float
         if (leftPod >= ringD + 14f * d && rightPod >= textW) {
             ringCx = p.left + leftPod / 2f
             textCx = g.cutout.right + rightPod / 2f
+            textRoom = rightPod - 12f * d
         } else if (rightPod >= ringD + textW + 14f * d) {
             ringCx = g.cutout.right + 8f * d + ringD / 2f
             textCx = ringCx + ringD / 2f + 6f * d + textW / 2f
+            textRoom = p.right - (ringCx + ringD / 2f + 6f * d) - 8f * d
         } else {
             ringCx = g.cutout.left - 8f * d - ringD / 2f
             textCx = ringCx - ringD / 2f - 6f * d - textW / 2f
+            textRoom = ringCx - ringD / 2f - 6f * d - p.left - 8f * d
         }
         val cy = g.cy
 
@@ -575,7 +611,12 @@ class IslandView(context: Context) : View(context) {
         }
         pillTimePaint.textSize = 13.5f * d
         pillTimePaint.color = IslandStyle.withAlpha(IslandStyle.lighten(accent, 0.2f), alpha)
-        val tw = pillTimePaint.measureText(countdownText)
+        var tw = pillTimePaint.measureText(countdownText)
+        if (textRoom > 20f * d && tw > textRoom) {
+            // "1:29:46" is wider than "29:46": make it fit inside its half of the pill
+            pillTimePaint.textSize = 13.5f * d * textRoom / tw
+            tw = pillTimePaint.measureText(countdownText)
+        }
         val fm = pillTimePaint.fontMetrics
         c.drawText(countdownText, textCx - tw / 2f, cy - (fm.ascent + fm.descent) / 2f, pillTimePaint)
     }

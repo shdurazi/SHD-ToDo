@@ -70,6 +70,19 @@ object IslandController {
     private var wm: WindowManager? = null
     private var params: WindowManager.LayoutParams? = null
     private var hostName = ""
+    private var hostContext: Context? = null
+    private var hostType = 0
+    private var shownModel: IslandView.Model? = null
+
+    /**
+     * The window of the opened card. It is added when the card opens and removed once it has closed again. The pill's
+     * window never changes size or place (see [IslandView.setCovered]); it only steps aside while the card is open.
+     */
+    private var card: IslandView? = null
+    private var cardParams: WindowManager.LayoutParams? = null
+
+    /** Counts the card's opening and closing steps, so that a delayed step of an older one can tell it is out of date. */
+    private var cardGen = 0
     private var geo: IslandView.Geo? = null
     private var shownKind = 0
     private var shownKey = 0L
@@ -77,7 +90,6 @@ object IslandController {
     private var previewUntil = 0L
     private var finishUntil = 0L
     private var introPending = false
-    private var windowOpen = false
     private var fading = false
     private var wanted = false
     private var tickScheduled = false
@@ -188,6 +200,7 @@ object IslandController {
         val v = view
         if (v != null) {
             v.invalidate()
+            card?.invalidate()
             ticks++
         }
         val ctx = app
@@ -287,8 +300,11 @@ object IslandController {
         if (fading) {
             fading = false
             v.setAppearInstant()
+            card?.setAppearInstant()
         }
         v.setModel(model)
+        card?.setModel(model)
+        shownModel = model
         if (kind != shownKind || key != shownKey) {
             shownKind = kind
             shownKey = key
@@ -380,8 +396,10 @@ object IslandController {
         wm = host.manager
         params = layout
         hostName = host.name
+        hostContext = host.context
+        hostType = host.type
+        shownModel = model
         geo = g
-        windowOpen = false
         fading = false
         Log.i(
             TAG,
@@ -391,27 +409,40 @@ object IslandController {
         return true
     }
 
+    /** Callbacks of the pill's window. */
     private fun wire(v: IslandView) {
         v.onTapPill = {
             Log.i(TAG, "tap on the pill")
             openCard(HOLD_MS)
         }
-        v.onTapCard = {
+        v.onError = { t -> islandFailed(t) }
+    }
+
+    /** Callbacks of the card's window. */
+    private fun wireCard(c: IslandView) {
+        c.onTapPill = {
+            // the card is still opening or already closing: a tap brings it back
+            Log.i(TAG, "tap on the pill")
+            openCard(HOLD_MS)
+        }
+        c.onTapCard = {
             Log.i(TAG, "tap on the card")
             openApp()
             collapseCard()
         }
-        v.onSwipeUp = { collapseCard() }
-        v.onOutside = { if (windowOpen) collapseCard() }
-        v.onCollapsed = { shrinkWindow() }
-        v.onError = { t ->
-            main.post {
-                val a = app
-                if (a != null) IslandPrefs.setFailed(a, true)
-                Log.e(TAG, "island switched off after an error: $t")
-                detach("error")
-                a?.let { resyncNotification(it) }
-            }
+        c.onSwipeUp = { collapseCard() }
+        c.onOutside = { collapseCard() }
+        c.onCollapsed = { cardClosed() }
+        c.onError = { t -> islandFailed(t) }
+    }
+
+    private fun islandFailed(t: Throwable) {
+        main.post {
+            val a = app
+            if (a != null) IslandPrefs.setFailed(a, true)
+            Log.e(TAG, "island switched off after an error: $t")
+            detach("error")
+            a?.let { resyncNotification(it) }
         }
     }
 
@@ -440,8 +471,8 @@ object IslandController {
     }
 
     /**
-     * The window is only as big as it has to be: a transparent window would swallow the touches meant for whatever is
-     * under it. Closed it is the pill, open it is the card (a little larger, for the spring overshoot).
+     * A window is only as big as it has to be: a transparent window would swallow the touches meant for whatever is
+     * under it. The pill's window is the pill (a little larger, for the pop-in overshoot), the card's window is the card.
      */
     private fun windowRect(g: IslandView.Geo, open: Boolean): Rect {
         val d = g.density
@@ -471,39 +502,132 @@ object IslandController {
         p.height = r.height()
     }
 
-    private fun relayout(open: Boolean) {
-        val v = view ?: return
+    /** The screen changed (rotation, size, font...): move both windows. Only ever called when the geometry really changed. */
+    private fun relayout() {
         val w = wm ?: return
-        val p = params ?: return
         val g = geo ?: return
-        applyRect(p, windowRect(g, open))
-        try {
-            w.updateViewLayout(v, p)
-            windowOpen = open
-        } catch (t: Throwable) {
-            Log.w(TAG, "could not resize the window: $t")
+        val v = view
+        val p = params
+        if (v != null && p != null) {
+            applyRect(p, windowRect(g, false))
+            try {
+                w.updateViewLayout(v, p)
+            } catch (t: Throwable) {
+                Log.w(TAG, "could not resize the window: $t")
+            }
         }
-    }
-
-    private fun shrinkWindow() {
-        if (view == null) return
-        relayout(false)
-        Log.i(TAG, "closed")
+        val c = card
+        val cp = cardParams
+        if (c != null && cp != null) {
+            applyRect(cp, windowRect(g, true))
+            try {
+                w.updateViewLayout(c, cp)
+            } catch (t: Throwable) {
+                Log.w(TAG, "could not resize the card window: $t")
+            }
+        }
     }
 
     // ---------------------------------------------------------------- opening and closing the card
     private fun openCard(hold: Long) {
         val v = view ?: return
         main.removeCallbacks(closeCard)
-        if (!windowOpen) relayout(true)
-        v.expand()
+        val c = card
+        if (c == null) {
+            if (!addCard(v)) return
+        } else {
+            // the card's window is still there (it is opening or closing): bring the card back
+            cardGen++
+            v.setCovered(true)
+            c.expand()
+        }
         Log.i(TAG, "open")
         if (hold > 0L) main.postDelayed(closeCard, hold)
     }
 
+    /**
+     * The card gets a window of its own. It starts out drawing exactly what the pill's window draws; once it has really
+     * been drawn the pill's window steps aside and the card springs open, so there is no frame in which the system shows
+     * an old picture in a new place.
+     */
+    private fun addCard(pill: IslandView): Boolean {
+        val g = geo ?: return false
+        val w = wm ?: return false
+        val ctx = hostContext ?: return false
+        val m = shownModel ?: return false
+        var made: IslandView? = null
+        var layout: WindowManager.LayoutParams? = null
+        try {
+            val c = IslandView(ctx)
+            c.setModel(m)
+            c.setGeo(g)
+            wireCard(c)
+            val p = newParams(hostType, windowRect(g, true))
+            w.addView(c, p)
+            made = c
+            layout = p
+        } catch (t: Throwable) {
+            Log.w(TAG, "could not add the card window: $t")
+            return false
+        }
+        val c = made ?: return false
+        card = c
+        cardParams = layout
+        val gen = ++cardGen
+        var started = false
+        val go = Runnable {
+            if (started) return@Runnable
+            started = true
+            if (card === c && gen == cardGen) {
+                pill.setCovered(true)
+                c.expand()
+            }
+        }
+        c.afterFrames(3) { go.run() }
+        main.postDelayed(go, 500L)
+        return true
+    }
+
     private fun collapseCard() {
         main.removeCallbacks(closeCard)
-        view?.collapse()
+        card?.collapse()
+    }
+
+    /** The card has shrunk back into the pill: the pill's window draws again and the card's window goes away. */
+    private fun cardClosed() {
+        val c = card ?: return
+        val pill = view
+        if (pill == null) {
+            removeCard()
+            return
+        }
+        pill.setCovered(false)
+        val gen = ++cardGen
+        var gone = false
+        val go = Runnable {
+            if (gone) return@Runnable
+            gone = true
+            if (card === c && gen == cardGen) {
+                removeCard()
+                Log.i(TAG, "closed")
+            }
+        }
+        pill.afterFrames(3) { go.run() }
+        main.postDelayed(go, 400L)
+    }
+
+    private fun removeCard() {
+        val c = card ?: return
+        card = null
+        cardParams = null
+        cardGen++
+        view?.setCovered(false)
+        try {
+            c.stopAnimations()
+            wm?.removeViewImmediate(c)
+        } catch (t: Throwable) {
+            Log.w(TAG, "could not remove the card window: $t")
+        }
     }
 
     private fun openApp() {
@@ -525,12 +649,15 @@ object IslandController {
         main.removeCallbacks(closeCard)
         main.removeCallbacks(introOpen)
         Log.i(TAG, "fade out")
-        v.fadeOut { detach("faded out") }
+        // whichever window is showing fades; the other one is covered or empty
+        val c = card
+        if (c != null) c.fadeOut { detach("faded out") } else v.fadeOut { detach("faded out") }
     }
 
     private fun detach(reason: String) {
         main.removeCallbacks(closeCard)
         main.removeCallbacks(introOpen)
+        removeCard()
         val v = view
         if (v != null) {
             try {
@@ -544,8 +671,9 @@ object IslandController {
         wm = null
         params = null
         geo = null
+        hostContext = null
+        shownModel = null
         fading = false
-        windowOpen = false
         shownKind = 0
         shownKey = 0L
         introPending = false
@@ -565,7 +693,8 @@ object IslandController {
         if (old == null || !sameGeo(old, g)) {
             geo = g
             v.setGeo(g)
-            relayout(windowOpen)
+            card?.setGeo(g)
+            relayout()
             Log.i(TAG, "geometry changed: pill=${g.pill.toShortString()} card=${g.card.toShortString()}")
         }
     }
@@ -621,7 +750,7 @@ object IslandController {
         var bottom = top + pillH
         // under the status bar the part of the pill inside the bar can't be tapped: let a strip of it hang below
         if (overlayHost) bottom = max(bottom, statusBar + 8f * d)
-        val pillW = min(max(hole.width() + 2f * 58f * d, 120f * d), sw - 2f * margin)
+        val pillW = min(max(hole.width() + 2f * 62f * d, 120f * d), sw - 2f * margin)
         val pcx = hole.centerX().coerceIn(pillW / 2f + margin, sw - pillW / 2f - margin)
         val pill = RectF(pcx - pillW / 2f, top, pcx + pillW / 2f, bottom)
 

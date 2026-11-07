@@ -62,12 +62,12 @@ sheet() { # sheet <mp4> <jpg> <start s> <length s> <fps> <label>: a contact shee
   echo "SHOT-BEGIN $6"; base64 -w0 "$2"; echo; echo "SHOT-END $6"
 }
 
-film() { # film <name> <label> <command...>: records the screen (10 s) around the command and prints two contact sheets
+film() { # film <name> <label> <command...>: records the screen (12 s) around the command and prints 3 contact sheets
   local name=$1 label=$2 rp
   shift 2
-  if ! command -v ffmpeg > /dev/null; then "$@"; sleep 9; return; fi
+  if ! command -v ffmpeg > /dev/null; then "$@"; sleep 11; return; fi
   adb shell rm -f /sdcard/film.mp4 > /dev/null 2>&1
-  adb shell screenrecord --time-limit 10 /sdcard/film.mp4 > /dev/null 2>&1 &
+  adb shell screenrecord --time-limit 12 /sdcard/film.mp4 > /dev/null 2>&1 &
   rp=$!
   sleep 1.5
   "$@"
@@ -75,8 +75,9 @@ film() { # film <name> <label> <command...>: records the screen (10 s) around th
   sleep 1
   if adb pull /sdcard/film.mp4 "$OUT/$name.mp4" > /dev/null 2>&1; then
     echo "recording $name: $(stat -c %s "$OUT/$name.mp4") bytes, $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT/$name.mp4" 2>/dev/null) s"
-    sheet "$OUT/$name.mp4" "$OUT/$name-intro.jpg" 1.3 2.8 6 "$label-intro"
-    sheet "$OUT/$name.mp4" "$OUT/$name-outro.jpg" 7.0 1.6 10 "$label-outro"
+    sheet "$OUT/$name.mp4" "$OUT/$name-1.jpg" 1.6 3.2 5 "$label-1"
+    sheet "$OUT/$name.mp4" "$OUT/$name-2.jpg" 4.8 3.2 5 "$label-2"
+    sheet "$OUT/$name.mp4" "$OUT/$name-3.jpg" 8.0 3.2 5 "$label-3"
   else
     echo "no recording for $name"
   fi
