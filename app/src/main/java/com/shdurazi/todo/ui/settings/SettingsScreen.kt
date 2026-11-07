@@ -45,6 +45,8 @@ import com.shdurazi.todo.core.AppData
 import com.shdurazi.todo.core.Codec
 import com.shdurazi.todo.core.Fmt
 import com.shdurazi.todo.core.Queries
+import com.shdurazi.todo.island.IslandController
+import com.shdurazi.todo.island.IslandPrefs
 import com.shdurazi.todo.notify.Notifier
 import com.shdurazi.todo.notify.ReminderEngine
 import com.shdurazi.todo.ui.UiState
@@ -83,6 +85,34 @@ private fun openLiveUpdateSettings(ctx: Context) {
     }
 }
 
+private fun openOverlaySettings(ctx: Context) {
+    try {
+        ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName)))
+    } catch (e: Exception) {
+        try {
+            ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+        } catch (e2: Exception) {
+            // not available on this device
+        }
+    }
+}
+
+private fun openAccessibilitySettings(ctx: Context) {
+    try {
+        ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    } catch (e: Exception) {
+        // not available on this device
+    }
+}
+
+private fun openAppInfo(ctx: Context) {
+    try {
+        ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName)))
+    } catch (e: Exception) {
+        // not available on this device
+    }
+}
+
 private fun openExactAlarmSettings(ctx: Context) {
     if (Build.VERSION.SDK_INT < 31) return
     val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + ctx.packageName))
@@ -102,7 +132,20 @@ fun SettingsScreen(ui: UiState, data: AppData, h24: Boolean, onBack: () -> Unit)
 
     // permissions can change while the system settings are open: look again whenever we come back
     var refresh by remember { mutableIntStateOf(0) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh += 1 }
+    var awaitingOverlay by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        refresh += 1
+        // back from the "Display over other apps" page with the permission given: show what it looks like
+        if (awaitingOverlay && IslandController.canOverlay(ctx)) {
+            awaitingOverlay = false
+            IslandController.settingsChanged(ctx)
+            IslandController.preview(ctx)
+        }
+    }
+    var islandOn by remember { mutableStateOf(IslandPrefs.enabled(ctx)) }
+    val overlayOk = remember(refresh) { IslandController.canOverlay(ctx) }
+    val a11yOn = remember(refresh) { IslandController.accessibilityOn() }
+    val islandFailed = remember(refresh) { IslandPrefs.failed(ctx) }
     val notificationsOn = remember(refresh) { NotificationManagerCompat.from(ctx).areNotificationsEnabled() }
     val exactOk = remember(refresh) { ReminderEngine.canScheduleExact(ctx) }
     val liveOn = remember(refresh) { Notifier.canPostLiveUpdates(ctx) }
@@ -246,6 +289,63 @@ fun SettingsScreen(ui: UiState, data: AppData, h24: Boolean, onBack: () -> Unit)
                 size = 13.sp,
                 color = Ink.TextDim,
                 maxLines = 8,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp)
+            )
+
+            // ------------------------------------------------------------------ island
+            SectionLabel("Island")
+            FormGroup {
+                SwitchRow("Focus island", islandOn, accent) { on ->
+                    islandOn = on
+                    IslandPrefs.setEnabled(ctx, on)
+                    IslandController.settingsChanged(ctx)
+                    refresh += 1
+                }
+                GroupDivider()
+                ValueRow(
+                    label = "Display over other apps",
+                    value = if (overlayOk) "Allowed" else "Off — tap to allow",
+                    valueColor = if (overlayOk) Ink.TextDim else Color(0xFFFF9F0A),
+                    onTap = {
+                        awaitingOverlay = true
+                        openOverlaySettings(ctx)
+                    }
+                )
+                GroupDivider()
+                ValueRow(
+                    label = "Accessibility service",
+                    value = if (a11yOn) "On" else "Off — tap to set up",
+                    onTap = {
+                        openAccessibilitySettings(ctx)
+                        if (!a11yOn) {
+                            ui.showToast("Greyed out? Open App info › ⋮ › Allow restricted settings", "App info") { openAppInfo(ctx) }
+                        }
+                    }
+                )
+                GroupDivider()
+                ValueRow(
+                    label = "Preview",
+                    value = "Show the island",
+                    onTap = {
+                        if (!overlayOk && !a11yOn) {
+                            ui.showToast("Allow “Display over other apps” first")
+                        } else {
+                            IslandController.preview(ctx)
+                        }
+                    }
+                )
+            }
+            Txt(
+                text = "While a focus session runs and ToDo isn't open, it shows as an island around the camera, like Anchor. " +
+                    "Allow \"Display over other apps\" to see it over your apps. For the full look, above the status bar, tappable and " +
+                    "on the lock screen, also turn on the ToDo accessibility service: it only draws the island and cannot read your " +
+                    "screen, but some banking apps refuse to run while any accessibility service is on. " +
+                    "With the island on, the Live Update chip is not used." +
+                    (if (islandFailed) " The island stopped after an error: switch it off and on again to retry." else ""),
+                size = 13.sp,
+                color = Ink.TextDim,
+                maxLines = 12,
                 lineHeight = 18.sp,
                 modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp)
             )

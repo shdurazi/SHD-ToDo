@@ -8,6 +8,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.shdurazi.todo.core.Planner
+import com.shdurazi.todo.island.IslandController
 import com.shdurazi.todo.notify.FocusController
 import com.shdurazi.todo.notify.ReminderEngine
 import com.shdurazi.todo.ui.AppRoot
@@ -41,6 +42,8 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         ToDoApp.of(this).foreground = true
+        // the island steps aside while the app itself is in front
+        IslandController.refresh(this)
         // catches up on anything that came due while the app was not running and re-arms the alarm
         val app = applicationContext
         ToDoApp.scope.launch {
@@ -56,6 +59,8 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         ToDoApp.of(this).foreground = false
         ToDoApp.repo(this).flush()
+        // ... and comes back when the user leaves (Home, another app, the lock screen)
+        IslandController.refresh(this)
     }
 
     /** Notification taps, widget taps, the launcher shortcut and the quick settings tile all land here. */

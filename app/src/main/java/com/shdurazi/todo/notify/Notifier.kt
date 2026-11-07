@@ -28,6 +28,7 @@ import com.shdurazi.todo.core.Planner
 import com.shdurazi.todo.core.Queries
 import com.shdurazi.todo.core.Settings
 import com.shdurazi.todo.core.Task
+import com.shdurazi.todo.island.IslandController
 import com.shdurazi.todo.ui.Res
 import com.shdurazi.todo.ui.theme.Hues
 import java.time.ZoneId
@@ -262,8 +263,12 @@ object Notifier {
             .setChronometerCountDown(true)
             .setContentIntent(openApp(context, ID_FOCUS, MainActivity.ACTION_OPEN_FOCUS))
             .addAction(0, "Stop", broadcast(context, ACTION_STOP_FOCUS, "focus") { })
-            .setRequestPromotedOngoing(true)
-            .setShortCriticalText(chipText)
+        // While the island shows the session the notification stays an ordinary ongoing one,
+        // so that the system capsule and the island don't both claim the camera area.
+        if (!IslandController.active(context)) {
+            b.setRequestPromotedOngoing(true)
+            b.setShortCriticalText(chipText)
+        }
         if (Build.VERSION.SDK_INT >= 36) {
             val progress = focusProgress(context, f, now)
             if (progress != null) b.setStyle(progress)
@@ -461,6 +466,7 @@ object Notifier {
     fun syncOngoing(context: Context, d: AppData) {
         val nm = NotificationManagerCompat.from(context)
         val now = System.currentTimeMillis()
+        IslandController.sync(context, d)
         val f = d.focus
         if (f != null && f.endsAt > now) {
             postFocus(context, d, f)

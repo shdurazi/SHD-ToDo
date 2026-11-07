@@ -10,4 +10,6 @@
     <string name="shortcut_new_todo">New To Do</string>
     <string name="shortcut_new_todo_long">Add a new To Do</string>
     <string name="tile_new_todo">New To Do</string>
+    <string name="island_a11y_label">ToDo island</string>
+    <string name="island_a11y_description">Draws the ToDo focus island around the camera, above the status bar and on the lock screen. It only draws the island: it does not read or change anything on your screen.</string>
 </resources>
