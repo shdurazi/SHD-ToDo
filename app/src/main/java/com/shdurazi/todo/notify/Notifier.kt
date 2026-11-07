@@ -242,6 +242,9 @@ object Notifier {
         val hue = Hues.of(f.colorKey)
         val now = System.currentTimeMillis()
         val endClock = Fmt.clock(Planner.minuteOf(f.endsAt, zone), h24)
+        // text for the chip / capsule (a few characters); redrawn every minute by the alarm
+        val leftMs = f.endsAt - now
+        val chipText = if (leftMs < 60_000L) "<1m" else Fmt.duration(((leftMs + 59_999L) / 60_000L).toInt())
         // the length of the session never changes, so this line never goes stale; the countdown itself is the chronometer
         val totalMin = ((f.endsAt - f.startedAt + 30_000L) / 60_000L).coerceAtLeast(1L).toInt()
         val b = NotificationCompat.Builder(context, Channels.FOCUS)
@@ -260,6 +263,7 @@ object Notifier {
             .setContentIntent(openApp(context, ID_FOCUS, MainActivity.ACTION_OPEN_FOCUS))
             .addAction(0, "Stop", broadcast(context, ACTION_STOP_FOCUS, "focus") { })
             .setRequestPromotedOngoing(true)
+            .setShortCriticalText(chipText)
         if (Build.VERSION.SDK_INT >= 36) {
             val progress = focusProgress(context, f, now)
             if (progress != null) b.setStyle(progress)

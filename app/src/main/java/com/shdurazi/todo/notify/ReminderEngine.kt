@@ -41,9 +41,11 @@ object ReminderEngine {
         val refresh = Planner.nextRefreshAt(data, now, zone)
         val dueFirst = nextDue != null && nextDue <= refresh
         val at = if (dueFirst && nextDue != null) nextDue else refresh
+        val focusRunning = data.focus?.let { it.endsAt > now } == true
         val pi = alarmIntent(context)
         try {
-            if (dueFirst && canScheduleExact(context)) {
+            // exact while something is due, and also while a focus session runs (its progress is redrawn every minute)
+            if ((dueFirst || focusRunning) && canScheduleExact(context)) {
                 am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
             } else {
                 am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)

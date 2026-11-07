@@ -138,8 +138,14 @@ for variant in debug release; do
     adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
     sleep 2
     tap_text "Back"
+    adb shell input keyevent 4
+    sleep 1.5
     dump
-    if [ -z "$(python3 scripts/ui_find.py "Settings" < "$OUT/ui.xml")" ]; then tap_text "November"; fi
+    if [ -z "$(python3 scripts/ui_find.py "Settings" < "$OUT/ui.xml")" ]; then
+      echo "Settings not visible: reopening the app"
+      adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
+      sleep 2
+    fi
     tap_text "Settings"
     sleep 1.5
     shot "$variant-11-settings"
