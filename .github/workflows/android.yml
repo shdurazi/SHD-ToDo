@@ -135,6 +135,9 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Tools for the screenshots (ImageMagick and ffmpeg)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick ffmpeg > /dev/null || true
+
       - name: Run the app on an emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:

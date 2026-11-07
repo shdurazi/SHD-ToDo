@@ -386,7 +386,7 @@ object IslandController {
         Log.i(
             TAG,
             "attach host=${host.name} pill=${g.pill.toShortString()} card=${g.card.toShortString()} " +
-                "cutout=${g.cutout.toShortString()} density=${g.density}"
+                "cutout=${g.cutout.toShortString()} virtual=${g.virtualHole} density=${g.density}"
         )
         return true
     }
@@ -571,14 +571,17 @@ object IslandController {
     }
 
     private fun sameGeo(a: IslandView.Geo, b: IslandView.Geo): Boolean =
-        abs(a.density - b.density) < 0.001f && same(a.pill, b.pill) && same(a.card, b.card) && same(a.cutout, b.cutout)
+        abs(a.density - b.density) < 0.001f && abs(a.titleRight - b.titleRight) < 0.5f && same(a.pill, b.pill) &&
+            same(a.card, b.card) && same(a.cutout, b.cutout)
 
     private fun same(a: RectF, b: RectF): Boolean =
         abs(a.left - b.left) < 0.5f && abs(a.top - b.top) < 0.5f && abs(a.right - b.right) < 0.5f && abs(a.bottom - b.bottom) < 0.5f
 
     /**
-     * Where everything goes, in screen pixels: the camera hole (read from the display, or an imaginary one at the top
-     * centre on phones without), the pill around it and the card that grows out of it. Null in landscape.
+     * Where everything goes, in screen pixels: the camera hole, the pill around it and the card that grows out of it.
+     * A hole near the middle of the width is used as it is. Anything else (a hole in a corner or at the side, a notch much
+     * wider than a pill, no hole at all) leaves the island at the top centre with an imaginary hole, so that it looks the
+     * same on every phone. Null in landscape.
      */
     private fun computeGeo(ctx: Context, overlayHost: Boolean): IslandView.Geo? {
         val dm = ctx.getSystemService(DisplayManager::class.java) ?: return null
@@ -593,31 +596,43 @@ object IslandController {
         if (sw <= 0f || sw > sh) return null
         val d = metrics.density
 
+        val res = ctx.resources
+        val sbId = res.getIdentifier("status_bar_height", "dimen", "android")
+        val statusBar = if (sbId > 0) res.getDimensionPixelSize(sbId).toFloat() else 24f * d
+
         var cut: RectF? = null
         if (Build.VERSION.SDK_INT >= 29) {
             val r = display.cutout?.boundingRectTop
             if (r != null && !r.isEmpty) cut = RectF(r)
         }
-        val hole = cut ?: RectF(sw / 2f - 12f * d, 8f * d, sw / 2f + 12f * d, 8f * d + 24f * d)
+        val real = cut
+        val centred = real != null && abs(real.centerX() - sw / 2f) <= sw * 0.12f && real.width() <= sw * 0.3f
+        val hole: RectF
+        if (real != null && centred) {
+            hole = real
+        } else {
+            val cyv = (statusBar / 2f).coerceIn(19f * d, 34f * d)
+            hole = RectF(sw / 2f - 12f * d, cyv - 12f * d, sw / 2f + 12f * d, cyv + 12f * d)
+        }
 
-        val res = ctx.resources
-        val sbId = res.getIdentifier("status_bar_height", "dimen", "android")
-        val statusBar = if (sbId > 0) res.getDimensionPixelSize(sbId).toFloat() else 24f * d
-
+        val margin = 8f * d
         val pillH = (hole.height() + 12f * d).coerceIn(30f * d, 38f * d)
         val top = max(0f, hole.centerY() - pillH / 2f)
         var bottom = top + pillH
         // under the status bar the part of the pill inside the bar can't be tapped: let a strip of it hang below
         if (overlayHost) bottom = max(bottom, statusBar + 8f * d)
-        val pillW = max(hole.width() + 2f * 58f * d, 120f * d)
-        val pcx = hole.centerX()
+        val pillW = min(max(hole.width() + 2f * 58f * d, 120f * d), sw - 2f * margin)
+        val pcx = hole.centerX().coerceIn(pillW / 2f + margin, sw - pillW / 2f - margin)
         val pill = RectF(pcx - pillW / 2f, top, pcx + pillW / 2f, bottom)
 
-        val margin = 8f * d
         val cardW = min(sw - 2f * margin, sw * 0.92f)
         val half = cardW / 2f
         val ccx = pcx.coerceIn(half + margin, sw - half - margin)
-        val card = RectF(ccx - half, top, ccx + half, top + IslandMetrics.cardHeight(cardW))
-        return IslandView.Geo(card, pill, hole, d, hole.centerY())
+        // above the status bar (accessibility window) the card grows out of the camera; below it (plain overlay) the
+        // status bar's own icons are drawn over the window, so the card hangs underneath them
+        val cardTop = if (overlayHost) max(top, statusBar + 4f * d) else top
+        val card = RectF(ccx - half, cardTop, ccx + half, cardTop + IslandMetrics.cardHeight(cardW))
+        val titleRight = if (overlayHost) card.right - 74f / 1008f * cardW else hole.left - 10f * d
+        return IslandView.Geo(card, pill, hole, d, hole.centerY(), titleRight, !(real != null && centred))
     }
 }

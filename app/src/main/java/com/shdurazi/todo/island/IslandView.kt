@@ -57,7 +57,19 @@ class IslandView(context: Context) : View(context) {
     )
 
     /** Screen-space geometry: the open card, the closed pill, the camera hole, the density and the line the pill's content sits on. */
-    class Geo(val card: RectF, val pill: RectF, val cutout: RectF, val density: Float, val cy: Float)
+    /**
+     * [titleRight] is how far to the right the card's title may reach (the camera hole is in its way when the card is
+     * at the top of the screen); [virtualHole] says that [cutout] is an imaginary hole at the top centre, not a real one.
+     */
+    class Geo(
+        val card: RectF,
+        val pill: RectF,
+        val cutout: RectF,
+        val density: Float,
+        val cy: Float,
+        val titleRight: Float,
+        val virtualHole: Boolean
+    )
 
     var onTapPill: (() -> Unit)? = null
     var onTapCard: (() -> Unit)? = null
@@ -416,7 +428,7 @@ class IslandView(context: Context) : View(context) {
         titlePaint.textSize = 31f * u
         timePaint.textSize = 46f * u
         val titleX = card.left + 74f * u
-        val maxW = max(g.cutout.left - 10f * g.density - titleX, 60f * g.density)
+        val maxW = max(g.titleRight - titleX, 60f * g.density)
         if (m.title != titleSource || abs(maxW - titleWidth) > 0.5f) {
             titleSource = m.title
             titleWidth = maxW

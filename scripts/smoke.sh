@@ -45,38 +45,57 @@ crash_report() { # crash_report <logcat file>
 }
 
 
-top_shot() { # top_shot <png> <name>: the top of a screenshot (where the island is) as a JPEG in the log
-  local W F
+top_shot() { # top_shot <png> <name>: the top of a screenshot (where the island is) as a small JPEG in the log
+  local F=$1 W
   W=$(identify -format %w "$1" 2>/dev/null || echo 1080)
   if command -v convert > /dev/null; then
-    convert "$1" -crop "${W}x560+0+0" +repage -resize 720x -quality 82 "${1%.png}.jpg" && F="${1%.png}.jpg" || F="$1"
-  else
-    F="$1"
+    convert "$1" -crop "${W}x560+0+0" +repage -resize 720x -quality 82 "${1%.png}.jpg" && F="${1%.png}.jpg"
   fi
   echo "SHOT-BEGIN $2"; base64 -w0 "$F"; echo; echo "SHOT-END $2"
 }
 
-frames() { # frames <prefix> <count> <label>: screenshots as fast as the emulator allows, with the time of each
-  local t0 i now
-  t0=$(date +%s.%N)
-  for i in $(seq 1 "$2"); do
-    adb exec-out screencap -p > "$OUT/$1-$i.png"
-    now=$(date +%s.%N)
-    echo "frame $3-$i at +$(awk "BEGIN{printf \"%.1f\", $now - $t0}")s"
-  done
-  for i in $(seq 1 "$2"); do top_shot "$OUT/$1-$i.png" "$3-$i"; done
+sheet() { # sheet <mp4> <jpg> <start s> <length s> <fps> <label>: a contact sheet (4 x 4 frames) of the top of the screen
+  ffmpeg -loglevel error -y -ss "$3" -t "$4" -i "$1" -vf "fps=$5,crop=iw:min(ih\,560):0:0,scale=448:-2,tile=4x4" \
+    -frames:v 1 -q:v 4 "$2" || return
+  echo "SHOT-BEGIN $6"; base64 -w0 "$2"; echo; echo "SHOT-END $6"
+}
+
+film() { # film <name> <label> <command...>: records the screen (10 s) around the command and prints two contact sheets
+  local name=$1 label=$2 rp
+  shift 2
+  if ! command -v ffmpeg > /dev/null; then "$@"; sleep 9; return; fi
+  adb shell rm -f /sdcard/film.mp4 > /dev/null 2>&1
+  adb shell screenrecord --time-limit 10 /sdcard/film.mp4 > /dev/null 2>&1 &
+  rp=$!
+  sleep 1.5
+  "$@"
+  wait $rp
+  sleep 1
+  if adb pull /sdcard/film.mp4 "$OUT/$name.mp4" > /dev/null 2>&1; then
+    echo "recording $name: $(stat -c %s "$OUT/$name.mp4") bytes, $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT/$name.mp4" 2>/dev/null) s"
+    sheet "$OUT/$name.mp4" "$OUT/$name-intro.jpg" 1.3 2.8 6 "$label-intro"
+    sheet "$OUT/$name.mp4" "$OUT/$name-outro.jpg" 7.0 1.6 10 "$label-outro"
+  else
+    echo "no recording for $name"
+  fi
 }
 
 island_geometry() { adb logcat -d -s ToDoIsland:I | python3 scripts/island_xy.py; }
 
-island_test() { # island_test <variant>
-  local v=$1 PX PY PB CX CY DENS
-  echo "::group::[$v] island (API $API)"
-  echo "--- cutout overlays in this image"
-  adb shell cmd overlay list 2>&1 | grep -i cutout | head -8
-  adb shell cmd overlay enable com.android.internal.display.cutout.emulation.hole 2>&1 | head -2
-  sleep 3
-  adb shell dumpsys display | grep -i "cutout" | cut -c1-260 | head -3
+CUT=com.android.internal.display.cutout.emulation
+
+cutout_set() { # cutout_set <name|none>: shows one of the emulator's camera cutouts (or none) and prints what the display reports
+  local o
+  for o in corner double hole tall emu01 waterfall; do adb shell cmd overlay disable "$CUT.$o" > /dev/null 2>&1; done
+  if [ "$1" != none ]; then adb shell cmd overlay enable "$CUT.$1" 2>&1 | head -1; fi
+  sleep 4
+  echo "cutout '$1': $(adb shell dumpsys display | grep -a -m1 -o 'DisplayCutout{.*' | cut -c1-420)"
+}
+
+island_test() { # island_test <variant> <cutout> <full: yes|no>
+  local v=$1 cfg=$2 full=$3 t="$1-$2" PX PY PB CX CY DENS
+  echo "::group::[$v] island, cutout '$cfg' (API $API)"
+  cutout_set "$cfg"
   adb shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow
   echo "overlay permission: $(adb shell appops get "$PKG" SYSTEM_ALERT_WINDOW | tr -d '\r')"
   adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
@@ -85,14 +104,12 @@ island_test() { # island_test <variant>
   echo "--- 1. a session started inside the app: the island must stay away while the app is in front"
   adb shell am start -n "$PKG/.MainActivity" -a com.shdurazi.todo.action.START_FOCUS --es block_id b-deep > /dev/null 2>&1
   sleep 3
-  adb exec-out screencap -p > "$OUT/$v-island-app.png"
-  top_shot "$OUT/$v-island-app.png" "$v-island-1-app-in-front"
+  adb exec-out screencap -p > "$OUT/$t-island-app.png"
+  top_shot "$OUT/$t-island-app.png" "$t-island-1-app-in-front"
   echo "--- 2. Home: the island should pop in, open, turn the dial and close again (plain overlay window)"
-  adb shell input keyevent 3
-  frames "$OUT/$v-ov" 8 "$v-island-2-overlay"
-  sleep 5
-  adb exec-out screencap -p > "$OUT/$v-ov-closed.png"
-  top_shot "$OUT/$v-ov-closed.png" "$v-island-3-overlay-closed"
+  film "$t-ov" "$t-island-2-overlay" adb shell input keyevent 3
+  adb exec-out screencap -p > "$OUT/$t-ov-closed.png"
+  top_shot "$OUT/$t-ov-closed.png" "$t-island-3-overlay-closed"
   echo "--- ToDoIsland log (overlay)"
   adb logcat -d -v time -s ToDoIsland:I | cut -c1-300 | tail -40
   read -r PX PY PB CX CY DENS <<< "$(island_geometry)"
@@ -106,8 +123,8 @@ island_test() { # island_test <variant>
     adb shell input tap "$PX" "$(awk "BEGIN{printf \"%d\", $PB - 3 * $DENS}")"
     sleep 1.6
     echo "taps on the pill after the strip tap: $(adb logcat -d -s ToDoIsland:I | grep -c 'tap on the pill')"
-    adb exec-out screencap -p > "$OUT/$v-ov-tap.png"
-    top_shot "$OUT/$v-ov-tap.png" "$v-island-4-overlay-after-tap"
+    adb exec-out screencap -p > "$OUT/$t-ov-tap.png"
+    top_shot "$OUT/$t-ov-tap.png" "$t-island-4-overlay-after-tap"
     echo "--- 4. tap on the open card: the app should come to the front"
     adb shell input tap "$CX" "$CY"
     sleep 2.5
@@ -123,11 +140,9 @@ island_test() { # island_test <variant>
   adb shell am start -n "$PKG/.MainActivity" -a com.shdurazi.todo.action.START_FOCUS --es block_id b-wrap > /dev/null 2>&1
   sleep 3
   adb logcat -c
-  adb shell input keyevent 3
-  frames "$OUT/$v-a11y" 8 "$v-island-5-a11y"
-  sleep 5
-  adb exec-out screencap -p > "$OUT/$v-a11y-closed.png"
-  top_shot "$OUT/$v-a11y-closed.png" "$v-island-6-a11y-closed"
+  film "$t-a11y" "$t-island-5-a11y" adb shell input keyevent 3
+  adb exec-out screencap -p > "$OUT/$t-a11y-closed.png"
+  top_shot "$OUT/$t-a11y-closed.png" "$t-island-6-a11y-closed"
   echo "--- ToDoIsland log (accessibility)"
   adb logcat -d -v time -s ToDoIsland:I | cut -c1-300 | tail -30
   read -r PX PY PB CX CY DENS <<< "$(island_geometry)"
@@ -136,33 +151,41 @@ island_test() { # island_test <variant>
     adb shell input tap "$PX" "$PY"
     sleep 1.6
     echo "taps on the pill after the middle tap: $(adb logcat -d -s ToDoIsland:I | grep -c 'tap on the pill')"
-    adb exec-out screencap -p > "$OUT/$v-a11y-tap.png"
-    top_shot "$OUT/$v-a11y-tap.png" "$v-island-7-a11y-after-tap"
+    adb exec-out screencap -p > "$OUT/$t-a11y-tap.png"
+    top_shot "$OUT/$t-a11y-tap.png" "$t-island-7-a11y-after-tap"
     adb shell input tap "$CX" "$CY"
     sleep 2.5
     echo "resumed: $(adb shell dumpsys activity activities | grep -m1 -E 'topResumedActivity|mResumedActivity' | cut -c1-200)"
     adb logcat -d -s ToDoIsland:I | grep -E "tap on the card|fade out|detached" | tail -4
   fi
-  echo "--- 6. lock screen"
-  adb shell input keyevent 3
-  sleep 4
-  adb shell input keyevent 26
-  sleep 2
-  adb shell input keyevent 26
-  sleep 2
-  adb exec-out screencap -p > "$OUT/$v-a11y-lock.png"
-  top_shot "$OUT/$v-a11y-lock.png" "$v-island-8-a11y-lock-screen"
-  adb shell input keyevent 82
-  adb shell wm dismiss-keyguard > /dev/null 2>&1
-  sleep 1
+
+  if [ "$full" = yes ]; then
+    echo "--- 6. lock screen (with a PIN, so that the keyguard is a real one)"
+    adb shell input keyevent 3
+    sleep 4
+    adb shell locksettings set-pin 1234 2>&1 | head -2
+    adb shell input keyevent 26
+    sleep 2
+    adb shell input keyevent 26
+    sleep 3
+    adb exec-out screencap -p > "$OUT/$t-a11y-lock.png"
+    top_shot "$OUT/$t-a11y-lock.png" "$t-island-8-a11y-lock-screen"
+    adb shell input keyevent 82
+    sleep 1
+    adb shell input text 1234
+    adb shell input keyevent 66
+    sleep 2
+    adb shell locksettings clear --old 1234 2>&1 | head -2
+    adb shell wm dismiss-keyguard > /dev/null 2>&1
+    sleep 1
+  fi
 
   adb shell settings put secure enabled_accessibility_services "" > /dev/null 2>&1
   adb shell settings put secure accessibility_enabled 0 > /dev/null 2>&1
   adb shell appops set "$PKG" SYSTEM_ALERT_WINDOW default > /dev/null 2>&1
-  adb shell cmd overlay disable com.android.internal.display.cutout.emulation.hole > /dev/null 2>&1
   adb shell am force-stop "$PKG"
-  adb logcat -d > "$OUT/logcat-island-$v.txt"
-  crash_report "$OUT/logcat-island-$v.txt"
+  adb logcat -d > "$OUT/logcat-island-$t.txt"
+  crash_report "$OUT/logcat-island-$t.txt"
   echo "::endgroup::"
 }
 
@@ -288,7 +311,12 @@ for variant in debug release; do
     if [ -n "$PID3" ]; then echo "RESULT[$variant]: still running after the focus session"; else echo "RESULT[$variant]: DIED during the focus session"; fi
     echo "::endgroup::"
 
-    island_test "$variant"
+    island_test "$variant" hole yes
+    if [ "$variant" = debug ]; then
+      island_test "$variant" emu01 no
+      island_test "$variant" tall no
+    fi
+    cutout_set none
 
     echo "::group::[$variant] monkey test (API $API)"
     adb logcat -c
