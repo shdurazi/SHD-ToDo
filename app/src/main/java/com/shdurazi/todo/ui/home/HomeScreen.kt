@@ -1,7 +1,6 @@
 package com.shdurazi.todo.ui.home
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
@@ -274,7 +273,8 @@ fun HomeScreen(
                     }
                 }
 
-                AnimatedVisibility(
+                // fully qualified on purpose: inside the Column's Box the short name resolves to ColumnScope.AnimatedVisibility
+                androidx.compose.animation.AnimatedVisibility(
                     visible = ui.timeline == TimelineMode.Collapsed && !typing && !ui.drag.active,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
