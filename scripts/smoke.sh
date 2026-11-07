@@ -7,6 +7,12 @@ PKG=com.shdurazi.todo
 OUT=smoke-out
 mkdir -p "$OUT"
 
+echo "waiting for the system services to be ready ..."
+for i in $(seq 1 120); do
+  if adb shell pm path android 2>/dev/null | grep -q "package:"; then echo "ready after $i checks"; break; fi
+  sleep 3
+done
+sleep 5
 echo "Emulator: Android $(adb shell getprop ro.build.version.release | tr -d '\r') (API $API), $(adb shell wm size | tr -d '\r' | tail -1)"
 adb shell settings put system screen_off_timeout 1800000 > /dev/null 2>&1 || true
 adb shell svc power stayon true > /dev/null 2>&1 || true
@@ -107,6 +113,8 @@ for variant in debug release; do
     echo "--- ToDoProbe log"
     adb logcat -d -s ToDoProbe:I | cut -c1-200 | tail -20
     adb shell input keyevent 3
+    sleep 1
+    adb shell am start -a android.intent.action.MAIN -c android.intent.category.HOME > /dev/null 2>&1
     sleep 2
     shot "$variant-8-home-with-focus"
     adb shell cmd statusbar expand-notifications
