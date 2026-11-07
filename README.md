@@ -30,6 +30,10 @@
   notification (with a live chronometer and a *Stop* action). On Android 16 it is a *Live Update*: a countdown chip in
   the status bar and a progress bar in the block's colour. On OnePlus phones it can sit in the *Live Alerts* capsule
   around the camera: switch ToDo on under *Settings › Notifications & Quick Settings › Live Alerts*.
+- **The island.** While a focus session runs and the app is not in front, it shows as an island around the camera,
+  like in Anchor: a black pill with a progress ring and the countdown that springs open into a card (title, minutes
+  left, and the dial of your day with the running block glowing and the neighbouring blocks dimmed). Tap the pill to
+  open it, tap the card to come back to the app, swipe up to close it. See *The island* below for how to switch it on.
 - **Notifications.** To-do reminders (with *Done* and *Snooze*), a heads-up a few minutes before every block, a daily
   summary, and a note when a focus session ends. An optional ongoing notification shows what is next.
 - **Widgets.** *Tasks* (tick items off straight from the widget), *Timeline* and *Next up*. They are declared for the
@@ -49,6 +53,22 @@ Every push to `main` is built by GitHub Actions (`.github/workflows/android.yml`
 If a build ever fails, the workflow posts the compiler errors as a comment on the commit.
 All builds are signed with the same key and get a higher version number each time, so a newer APK installs over the
 older one and keeps your data.
+
+### The island
+
+Open **Settings › Island** in the app.
+
+1. Switch *Focus island* on and allow **Display over other apps**. The island now shows over your apps. Android draws the
+   status bar *above* such windows, so status icons next to the camera can overlap it and taps on the camera area itself
+   go to the status bar (the lower edge of the pill still takes taps).
+2. For the full look — above the status bar, tappable, also on the lock screen — turn on the **ToDo island**
+   accessibility service as well (*Settings › Accessibility › Installed apps*). If it is greyed out, open *App info › ⋮ ›
+   Allow restricted settings* first. The service only gives ToDo a window to draw in: it declares no content access, so it
+   cannot read your screen. Some banking apps refuse to run while *any* accessibility service is on.
+3. *Preview* shows the island without a running session.
+
+While the island is on, the focus notification is a normal ongoing notification (no Live Update chip), so the system
+capsule and the island do not fight over the same spot. Switch the island off to get the Live Update back.
 
 ### Build it yourself
 
@@ -73,6 +93,7 @@ are plain Kotlin without Android dependencies.
 app/src/main/java/com/shdurazi/todo
 ├── core/      data model, JSON, quick-add parser, timeline layout, queries, planner, repository
 ├── notify/    channels, notifications, alarm scheduling, receivers, Quick Settings tile
+├── island/    the focus island: hand-drawn view, window controller, accessibility host
 ├── widget/    Tasks / Timeline / Next up widgets (Glance)
 └── ui/        theme, components, home, sheets, focus, settings
 ```
@@ -98,6 +119,10 @@ Typeface: [Inter](https://rsms.me/inter/) (SIL Open Font License, see `licenses/
 - **وضع التركيز:** اضغط على فترة لبدء العدّ التنازلي، ويظهر أيضاً في إشعار مع زر إيقاف. على أندرويد 16 يصير «Live Update»
   (عدّاد في شريط الحالة وشريط تقدّم بلون الفترة)، وعلى أجهزة OnePlus يظهر في كبسولة Live Alerts حول الكاميرا بعد تفعيل
   ToDo من: الإعدادات ← Notifications & Quick Settings ← Live Alerts.
+- **الجزيرة (Island):** أثناء جلسة التركيز، وعندما لا يكون التطبيق مفتوحاً، تظهر الجلسة كجزيرة حول الكاميرا مثل Anchor:
+  كبسولة سوداء فيها حلقة تقدّم والعدّ التنازلي، تنفتح بحركة نابضة إلى بطاقة فيها اسم الفترة والدقائق المتبقية وقرص اليوم
+  (الفترة الجارية متوهّجة والفترات المجاورة خافتة). اضغط على الكبسولة لفتحها، وعلى البطاقة للعودة للتطبيق، واسحب للأعلى
+  لإغلاقها. طريقة التفعيل في قسم «الجزيرة» أدناه.
 - **الإشعارات:** تذكير بالمهام (تم / تأجيل)، تنبيه قبل كل فترة، ملخص يومي، وإشعار عند انتهاء التركيز، مع إشعار دائم اختياري
   بما هو قادم.
 - **الودجت:** المهام (علّم المهمة منجزة من الودجت نفسه)، الجدول الزمني، و«التالي». معرَّفة للشاشة الرئيسية ولشاشة القفل؛
@@ -113,3 +138,19 @@ Typeface: [Inter](https://rsms.me/inter/) (SIL Open Font License, see `licenses/
 
 كل تحديث على الفرع `main` يُبنى تلقائياً عبر GitHub Actions ويُنشر كإصدار جديد. كل النسخ موقّعة بنفس المفتاح، فالنسخة
 الأحدث تُثبَّت فوق القديمة وتحتفظ ببياناتك.
+
+### الجزيرة
+
+من التطبيق: **Settings ‹ Island**.
+
+1. فعّل *Focus island* واسمح بـ **Display over other apps**. بعدها تظهر الجزيرة فوق التطبيقات. أندرويد يرسم شريط الحالة
+   *فوق* هذا النوع من النوافذ، فقد تتداخل أيقونات الحالة القريبة من الكاميرا مع الجزيرة، والضغط على منطقة الكاميرا نفسها
+   يذهب لشريط الحالة (الحافة السفلية من الكبسولة تستقبل الضغط).
+2. للشكل الكامل — فوق شريط الحالة، قابلة للضغط، وتظهر على شاشة القفل — فعّل أيضاً خدمة إمكانية الوصول **ToDo island**
+   (الإعدادات ← إمكانية الوصول ← التطبيقات المثبّتة). إذا كانت باهتة وغير قابلة للضغط افتح *معلومات التطبيق ← ⋮ ←
+   السماح بالإعدادات المقيّدة* أولاً. الخدمة فقط تعطي ToDo نافذة يرسم فيها ولا تطلب الوصول لمحتوى الشاشة فلا تقرأها.
+   بعض تطبيقات البنوك ترفض العمل ما دامت أي خدمة إمكانية وصول مفعّلة.
+3. زر *Preview* يعرض الجزيرة بدون جلسة تركيز.
+
+وأثناء تفعيل الجزيرة يصير إشعار التركيز إشعاراً دائماً عادياً (بدون شريحة Live Update) حتى لا تتعارض الكبسولة النظامية
+مع الجزيرة. أوقف الجزيرة لترجع Live Update.
