@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -241,12 +242,13 @@ object Notifier {
         val hue = Hues.of(f.colorKey)
         val now = System.currentTimeMillis()
         val endClock = Fmt.clock(Planner.minuteOf(f.endsAt, zone), h24)
-        val leftMin = ((f.endsAt - now + 59_999L) / 60_000L).coerceAtLeast(1L).toInt()
+        // the length of the session never changes, so this line never goes stale; the countdown itself is the chronometer
+        val totalMin = ((f.endsAt - f.startedAt + 30_000L) / 60_000L).coerceAtLeast(1L).toInt()
         val b = NotificationCompat.Builder(context, Channels.FOCUS)
             .setSmallIcon(R.drawable.ic_stat_check)
             .setColor(hue.accentArgb)
             .setContentTitle(f.title)
-            .setContentText(Fmt.duration(leftMin) + " left · until " + endClock)
+            .setContentText(Fmt.duration(totalMin) + " · until " + endClock)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -264,7 +266,69 @@ object Notifier {
         }
         applyPrivacy(context, b, d.settings, Channels.FOCUS, "Focus session running")
         notify(context, ID_FOCUS, b.build())
-        if (Build.VERSION.SDK_INT >= 36) logLiveStatus(context)
+        if (Build.VERSION.SDK_INT >= 36) {
+            logLiveStatus(context)
+            probePromotable(context, f)
+        }
+    }
+
+    private var probed = false
+
+    /**
+     * Debug builds only, once: builds (without posting) notifications that differ in one characteristic and logs
+     * which of them the system calls promotable, to find out what keeps a notification from becoming a Live Update.
+     * Read by the emulator test.
+     */
+    private fun probePromotable(context: Context, f: FocusSession) {
+        if (probed) return
+        probed = true
+        try {
+            if ((context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
+            fun promotable(b: NotificationCompat.Builder): String {
+                val n = b.build()
+                return (n.javaClass.getMethod("hasPromotableCharacteristics").invoke(n) as? Boolean).toString()
+            }
+            fun base() = NotificationCompat.Builder(context, Channels.FOCUS)
+                .setSmallIcon(R.drawable.ic_stat_check)
+                .setContentTitle("Title")
+                .setContentText("Text")
+                .setOngoing(true)
+            Log.i("ToDoProbe", "fingerprint=" + Build.FINGERPRINT)
+            val now = System.currentTimeMillis()
+            fun probe(name: String, change: (NotificationCompat.Builder) -> Unit) {
+                val b = base()
+                change(b)
+                Log.i("ToDoProbe", "$name -> " + promotable(b))
+            }
+            probe("ongoing+title") { }
+            probe("+requestPromoted") { b -> b.setRequestPromotedOngoing(true) }
+            probe("+progressStyle") { b ->
+                b.setRequestPromotedOngoing(true)
+                val p = focusProgress(context, f, now)
+                if (p != null) b.setStyle(p)
+            }
+            probe("+chronometer") { b ->
+                b.setRequestPromotedOngoing(true).setShowWhen(true).setWhen(f.endsAt)
+                    .setUsesChronometer(true).setChronometerCountDown(true)
+            }
+            probe("+color") { b -> b.setRequestPromotedOngoing(true).setColor(Hues.of(f.colorKey).accentArgb) }
+            probe("+publicVersion") { b ->
+                val pub = NotificationCompat.Builder(context, Channels.FOCUS)
+                    .setSmallIcon(R.drawable.ic_stat_check).setContentTitle("ToDo").build()
+                b.setRequestPromotedOngoing(true).setPublicVersion(pub)
+            }
+            probe("+action") { b -> b.setRequestPromotedOngoing(true).addAction(0, "Stop", openApp(context, 9998)) }
+            probe("+silent") { b -> b.setRequestPromotedOngoing(true).setSilent(true).setOnlyAlertOnce(true) }
+            probe("+contentIntent") { b -> b.setRequestPromotedOngoing(true).setContentIntent(openApp(context, 9997)) }
+            probe("+categoryProgress") { b ->
+                b.setRequestPromotedOngoing(true).setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            }
+            val notOngoing = NotificationCompat.Builder(context, Channels.FOCUS)
+                .setSmallIcon(R.drawable.ic_stat_check).setContentTitle("Title").setRequestPromotedOngoing(true)
+            Log.i("ToDoProbe", "control (not ongoing) -> " + promotable(notOngoing))
+        } catch (e: Throwable) {
+            Log.i("ToDoProbe", "probe failed: $e")
+        }
     }
 
     /** Progress bar of the Live Update: one segment in the block's colour, the block's icon as the marker on it. */

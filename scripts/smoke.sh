@@ -8,6 +8,11 @@ OUT=smoke-out
 mkdir -p "$OUT"
 
 echo "Emulator: Android $(adb shell getprop ro.build.version.release | tr -d '\r') (API $API), $(adb shell wm size | tr -d '\r' | tail -1)"
+adb shell settings put system screen_off_timeout 1800000 > /dev/null 2>&1 || true
+adb shell svc power stayon true > /dev/null 2>&1 || true
+echo "Build: $(adb shell getprop ro.build.fingerprint | tr -d '\r')"
+echo "--- feature flags about Live Updates in this system image"
+adb shell aflags list 2>&1 | grep -i -E "rich_ongoing|promoted|status_bar_chips|live_update" | cut -c1-200 | head -20 || true
 
 shot() { # shot <name>: saves a screenshot and prints it into the log as base64 so it can be read from the job log
   adb exec-out screencap -p > "$OUT/$1.png"
@@ -39,6 +44,7 @@ for variant in debug release; do
   adb uninstall "$PKG" > /dev/null 2>&1 || true
   adb install -r "$APK" || { echo "RESULT[$variant]: install failed"; echo "::endgroup::"; continue; }
   adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS > /dev/null 2>&1 || true
+  adb shell dumpsys package "$PKG" | grep -i -E "POST_PROMOTED|POST_NOTIFICATIONS" | head -4
   adb logcat -c
   adb shell am start -W -n "$PKG/.MainActivity"
   sleep 8
@@ -94,13 +100,17 @@ for variant in debug release; do
     echo "--- notification record of the focus session"
     adb shell dumpsys notification --noredact > "$OUT/notif-$variant.txt" 2>&1
     grep -A70 "NotificationRecord.*pkg=$PKG.*id=103" "$OUT/notif-$variant.txt" | cut -c1-260 | head -80
+    echo "--- promoted-related lines of the notification dump"
+    grep -i -n "promot" "$OUT/notif-$variant.txt" | cut -c1-200 | head -15
     echo "--- ToDoLive log"
     adb logcat -d -s ToDoLive:I | tail -5
+    echo "--- ToDoProbe log"
+    adb logcat -d -s ToDoProbe:I | cut -c1-200 | tail -20
     adb shell input keyevent 3
     sleep 2
     shot "$variant-8-home-with-focus"
     adb shell cmd statusbar expand-notifications
-    sleep 2
+    sleep 3
     shot "$variant-9-shade"
     dump; echo "--- UI nodes (shade)"; python3 scripts/ui_dump.py < "$OUT/ui.xml" | grep -i -E "todo|left|until|stop|focus|deep|lunch|wrap" | head -20
     adb shell cmd statusbar collapse
@@ -108,8 +118,14 @@ for variant in debug release; do
     sleep 75
     echo "--- ToDoLive log (after a minute)"
     adb logcat -d -s ToDoLive:I | tail -5
+    adb shell input keyevent 224
     adb shell cmd statusbar expand-notifications
-    sleep 2
+    sleep 3
+    dump
+    if [ -z "$(python3 scripts/ui_find.py "Stop" < "$OUT/ui.xml")" ]; then
+      adb shell cmd statusbar expand-notifications
+      sleep 3
+    fi
     shot "$variant-10-shade-later"
     tap_text "Stop"
     sleep 2
@@ -121,10 +137,13 @@ for variant in debug release; do
     adb shell cmd statusbar collapse
     adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
     sleep 2
+    tap_text "Back"
+    dump
+    if [ -z "$(python3 scripts/ui_find.py "Settings" < "$OUT/ui.xml")" ]; then tap_text "November"; fi
     tap_text "Settings"
     sleep 1.5
     shot "$variant-11-settings"
-    dump; echo "--- UI nodes (settings)"; python3 scripts/ui_dump.py < "$OUT/ui.xml" | head -40
+    dump; echo "--- UI nodes (settings)"; python3 scripts/ui_dump.py < "$OUT/ui.xml" | grep -i -E "notif|live|alarm|exact|settings|summary" | head -20
     adb shell input keyevent 4
     sleep 1
     adb logcat -d > "$OUT/logcat-focus-$variant.txt"
