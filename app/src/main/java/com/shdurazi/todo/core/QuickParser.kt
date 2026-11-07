@@ -52,14 +52,14 @@ object QuickParser {
     )
     private val TODAY_TMR = Regex("${NB}(?:(?:on|by)\\s+)?(today|tonight|tomorrow|tmrw|tmr)$NA", IC)
     private val TIME_MERIDIEM = Regex(
-        "(?<![\\p{L}\\p{N}:.])(?:(?:at|@)\\s*)?(\\d{1,2})(?:[:.](\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)$NA",
+        "(?<![\\p{L}\\p{N}:.])(?:(?:at|@)\\s*)?(\\d{1,2})(?:[.:](\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)$NA",
         IC
     )
     private val TIME_24 = Regex(
         "(?<![\\p{L}\\p{N}:.])(?:(?:at|@)\\s*)?([01]?\\d|2[0-3]):([0-5]\\d)(?![\\p{L}\\p{N}:])",
         IC
     )
-    private val TIME_AT = Regex("${NB}(?:at|@)\\s*(\\d{1,2})(?:[:.]([0-5]\\d))?(?![\\p{L}\\p{N}:])", IC)
+    private val TIME_AT = Regex("${NB}(?:at|@)\\s*(\\d{1,2})(?:[.:]([0-5]\\d))?(?![\\p{L}\\p{N}:])", IC)
     private val NOON = Regex("${NB}(noon|midday)$NA", IC)
     private val DAYPART = Regex("${NB}(morning|afternoon|evening|night)$NA", IC)
 
