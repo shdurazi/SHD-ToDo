@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ToDo</string>
+    <string name="widget_today_label">ToDo · Tasks</string>
+    <string name="widget_today_desc">Your open tasks for today, with one-tap completion.</string>
+    <string name="widget_agenda_label">ToDo · Timeline</string>
+    <string name="widget_agenda_desc">Today\'s time blocks at a glance.</string>
+    <string name="widget_nextup_label">ToDo · Next up</string>
+    <string name="widget_nextup_desc">The block you are in or the next one coming up.</string>
+    <string name="shortcut_new_todo">New To Do</string>
+    <string name="shortcut_new_todo_long">Add a new To Do</string>
+    <string name="tile_new_todo">New To Do</string>
+</resources>

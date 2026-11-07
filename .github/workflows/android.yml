@@ -1,0 +1,112 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Make sure the Android SDK has what the app needs
+        shell: bash
+        run: |
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SDKM" ]; then
+            yes | "$SDKM" --licenses > /dev/null || true
+            "$SDKM" "platforms;android-36" "build-tools;36.0.0" > /dev/null || true
+          fi
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build the debug APK
+        id: debug
+        shell: bash
+        run: |
+          touch build.log
+          chmod +x gradlew
+          ./gradlew --stacktrace --console=plain :app:assembleDebug 2>&1 | tee -a build.log
+
+      - name: Build the release APK
+        id: release
+        if: steps.debug.outcome == 'success'
+        shell: bash
+        run: |
+          ./gradlew --stacktrace --console=plain :app:assembleRelease 2>&1 | tee -a build.log
+
+      - name: Collect the APKs
+        if: steps.debug.outcome == 'success'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/ToDo-debug.apk
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk dist/ToDo-release.apk
+          fi
+          ls -la dist
+
+      - name: Upload the APKs
+        if: steps.debug.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ToDo-apk
+          path: dist/*.apk
+
+      - name: Publish a release with the APKs
+        if: steps.debug.outcome == 'success' && github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          TAG="build-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" dist/*.apk \
+            --target "$GITHUB_SHA" \
+            --title "ToDo build ${GITHUB_RUN_NUMBER}" \
+            --notes "Download **ToDo-release.apk** and open it on your Android phone (allow installing from this source if asked). ToDo-debug.apk is the same app without optimisation and is only for troubleshooting." \
+            --latest
+
+      - name: Explain a failed build in a commit comment
+        if: failure() && github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          touch build.log
+          {
+            echo "### Build failed on ${GITHUB_SHA::7}"
+            echo
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo "**Compiler errors**"
+            echo '```'
+            grep -E '^e: ' build.log | sed -E 's#file://##; s#/home/runner/work/[^/]+/[^/]+/##' | cut -c1-400 | head -n 120 || true
+            echo '```'
+            echo
+            echo "**What went wrong**"
+            echo '```'
+            sed -n '/What went wrong/,/\* Try/p' build.log | cut -c1-400 | head -n 60 || true
+            echo '```'
+            echo
+            echo "**Log tail**"
+            echo '```'
+            tail -n 50 build.log | cut -c1-400
+            echo '```'
+          } > comment.md
+          head -c 60000 comment.md > comment_cut.md
+          gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" -F body=@comment_cut.md
