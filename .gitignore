@@ -14,3 +14,5 @@
 /app/release/
 *.keystore
 *.jks
+# the fixed signing key used by the CI builds (see app/build.gradle.kts)
+!/keystore/todo.keystore

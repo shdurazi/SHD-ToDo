@@ -45,6 +45,8 @@ it (Android asks once to allow installs from your browser or file manager).
 
 Every push to `main` is built by GitHub Actions (`.github/workflows/android.yml`) and published as a new release.
 If a build ever fails, the workflow posts the compiler errors as a comment on the commit.
+All builds are signed with the same key and get a higher version number each time, so a newer APK installs over the
+older one and keeps your data.
 
 ### Build it yourself
 
@@ -55,8 +57,9 @@ Requirements: JDK 17 and the Android SDK (platform 36).
 ./gradlew :app:assembleRelease    # app/build/outputs/apk/release/app-release.apk
 ```
 
-The release build is signed with the debug key so that it installs straight away. Use your own keystore before
-publishing anywhere else.
+Both builds are signed with the fixed key in `keystore/todo.keystore` (committed on purpose, password `android`) so that
+every build installs over the previous one. It is only meant for sideloading this personal app: use your own private
+keystore before publishing anywhere else.
 
 ### How it is built
 
@@ -104,4 +107,5 @@ Typeface: [Inter](https://rsms.me/inter/) (SIL Open Font License, see `licenses/
 افتح صفحة **Releases** في هذا المستودع، نزّل الملف `ToDo-release.apk` على هاتفك وافتحه (سيطلب أندرويد السماح بالتثبيت من
 المتصفح أو مدير الملفات مرة واحدة). الملف `ToDo-debug.apk` للتجربة وحل المشاكل فقط.
 
-كل تحديث على الفرع `main` يُبنى تلقائياً عبر GitHub Actions ويُنشر كإصدار جديد.
+كل تحديث على الفرع `main` يُبنى تلقائياً عبر GitHub Actions ويُنشر كإصدار جديد. كل النسخ موقّعة بنفس المفتاح، فالنسخة
+الأحدث تُثبَّت فوق القديمة وتحتفظ ببياناتك.

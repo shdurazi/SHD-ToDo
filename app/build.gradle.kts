@@ -14,8 +14,22 @@ android {
         applicationId = "com.shdurazi.todo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        // Every GitHub Actions build gets a higher number, so a newer APK always installs over an older one.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionName = "1.0"
+    }
+
+    signingConfigs {
+        // A fixed key, committed on purpose: it only exists so that every build is signed the same way and can be
+        // installed over the previous one without uninstalling first. Use your own private keystore before
+        // publishing the app anywhere else.
+        getByName("debug") {
+            storeFile = rootProject.file("keystore/todo.keystore")
+            storeType = "pkcs12"
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -23,8 +37,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key so the APK installs straight away.
-            // Use your own keystore here before publishing to the Play Store.
+            // Same fixed key as the debug build, so the APK installs straight away.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
