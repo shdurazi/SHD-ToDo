@@ -56,10 +56,10 @@ class IslandView(context: Context) : View(context) {
         val done: Boolean
     )
 
-    /** Screen-space geometry: the open card, the closed pill, the camera hole, the density and the line the pill's content sits on. */
     /**
-     * [titleRight] is how far to the right the card's title may reach (the camera hole is in its way when the card is
-     * at the top of the screen); [virtualHole] says that [cutout] is an imaginary hole at the top centre, not a real one.
+     * Screen-space geometry: the open card, the closed pill, the camera hole, the density and the line the pill's content
+     * sits on. [titleRight] is how far to the right the card's title may reach (the camera hole is in its way when the
+     * card is at the top of the screen); [virtualHole] says that [cutout] is an imaginary hole at the top centre.
      */
     class Geo(
         val card: RectF,

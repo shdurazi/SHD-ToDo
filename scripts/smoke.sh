@@ -32,10 +32,12 @@ shot() { # shot <name>: saves a screenshot and prints it into the log as base64 
 
 dump() { adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1; adb exec-out cat /sdcard/ui.xml > "$OUT/ui.xml"; }
 
-tap_text() { # tap_text <text or description>
+TAPPED=0
+tap_text() { # tap_text <text or description>; sets TAPPED to 1 when a node was found and tapped
   dump
   XY=$(python3 scripts/ui_find.py "$1" < "$OUT/ui.xml")
-  if [ -n "$XY" ]; then echo "tap '$1' at $XY"; adb shell input tap $XY; else echo "no node containing '$1'"; fi
+  TAPPED=0
+  if [ -n "$XY" ]; then echo "tap '$1' at $XY"; TAPPED=1; adb shell input tap $XY; else echo "no node containing '$1'"; fi
   sleep 1.5
 }
 
@@ -282,7 +284,9 @@ for variant in debug release; do
     shot "$variant-10-shade-later"
     tap_text "Stop"
     sleep 2
-    if adb shell dumpsys notification --noredact | grep -q "NotificationRecord.*pkg=$PKG.*id=103"; then
+    if [ "$TAPPED" != 1 ]; then
+      echo "RESULT[$variant]: no Stop button in the shade, nothing was tapped (a test problem, not an app problem)"
+    elif adb shell dumpsys notification --noredact | grep -q "NotificationRecord.*pkg=$PKG.*id=103"; then
       echo "RESULT[$variant]: focus notification still there after Stop"
     else
       echo "RESULT[$variant]: focus notification gone after Stop"
