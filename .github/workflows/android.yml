@@ -144,6 +144,8 @@ jobs:
           profile: pixel_6
           disable-animations: true
           disk-size: 6000M
+          ram-size: 4096M
+          cores: 4
           script: bash scripts/smoke.sh ${{ matrix.api }}
 
       - name: Keep the logs and screenshots
