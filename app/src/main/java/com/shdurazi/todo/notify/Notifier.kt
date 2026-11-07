@@ -4,10 +4,18 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.net.Uri
-import android.os.Bundle
+import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.DrawableCompat
+import androidx.core.graphics.drawable.IconCompat
 import com.shdurazi.todo.MainActivity
 import com.shdurazi.todo.R
 import com.shdurazi.todo.ToDoApp
@@ -19,8 +27,11 @@ import com.shdurazi.todo.core.Planner
 import com.shdurazi.todo.core.Queries
 import com.shdurazi.todo.core.Settings
 import com.shdurazi.todo.core.Task
+import com.shdurazi.todo.ui.Res
 import com.shdurazi.todo.ui.theme.Hues
 import java.time.ZoneId
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** Builds and posts every notification of the app. */
 object Notifier {
@@ -218,16 +229,24 @@ object Notifier {
         notify(context, ID_FOCUS_DONE, b.build())
     }
 
+    /**
+     * The running focus session. On Android 16 this is a "Live Update": the countdown sits in a chip in the status bar
+     * (on OnePlus it can live in the Live Alerts capsule around the camera) and the expanded card shows a progress
+     * bar in the block's colour with the block's icon on it. Older versions get a normal ongoing notification.
+     * The alarm in [ReminderEngine] redraws it every minute while the session runs.
+     */
     private fun postFocus(context: Context, d: AppData, f: FocusSession) {
         val zone = ZoneId.systemDefault()
         val h24 = ClockPref.is24(context, d.settings)
         val hue = Hues.of(f.colorKey)
+        val now = System.currentTimeMillis()
         val endClock = Fmt.clock(Planner.minuteOf(f.endsAt, zone), h24)
+        val leftMin = ((f.endsAt - now + 59_999L) / 60_000L).coerceAtLeast(1L).toInt()
         val b = NotificationCompat.Builder(context, Channels.FOCUS)
             .setSmallIcon(R.drawable.ic_stat_check)
             .setColor(hue.accentArgb)
             .setContentTitle(f.title)
-            .setContentText("Focus session · ends at $endClock")
+            .setContentText(Fmt.duration(leftMin) + " left · until " + endClock)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -238,12 +257,95 @@ object Notifier {
             .setChronometerCountDown(true)
             .setContentIntent(openApp(context, ID_FOCUS, MainActivity.ACTION_OPEN_FOCUS))
             .addAction(0, "Stop", broadcast(context, ACTION_STOP_FOCUS, "focus") { })
-        // Android 16 "Live Update": shows the countdown as a chip in the status bar. Ignored on older versions.
-        val extras = Bundle()
-        extras.putBoolean("android.requestPromotedOngoing", true)
-        b.addExtras(extras)
+            .setRequestPromotedOngoing(true)
+        if (Build.VERSION.SDK_INT >= 36) {
+            val progress = focusProgress(context, f, now)
+            if (progress != null) b.setStyle(progress)
+        }
         applyPrivacy(context, b, d.settings, Channels.FOCUS, "Focus session running")
         notify(context, ID_FOCUS, b.build())
+        if (Build.VERSION.SDK_INT >= 36) logLiveStatus(context)
+    }
+
+    /** Progress bar of the Live Update: one segment in the block's colour, the block's icon as the marker on it. */
+    private fun focusProgress(context: Context, f: FocusSession, now: Long): NotificationCompat.ProgressStyle? {
+        return try {
+            val hue = Hues.of(f.colorKey)
+            val total = ((f.endsAt - f.startedAt) / 1000L).coerceIn(1L, 7L * 86_400L).toInt()
+            val elapsed = ((now - f.startedAt) / 1000L).coerceIn(0L, total.toLong()).toInt()
+            val style = NotificationCompat.ProgressStyle()
+                .setProgress(elapsed)
+                .addProgressSegment(NotificationCompat.ProgressStyle.Segment(total).setColor(hue.accentArgb))
+            val marker = markerIcon(context, f)
+            if (marker != null) style.setProgressTrackerIcon(marker)
+            style
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    /** The block's glyph in white on a disc in the block's colour. */
+    private fun markerIcon(context: Context, f: FocusSession): IconCompat? {
+        return try {
+            val hue = Hues.of(f.colorKey)
+            val size = 96
+            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            paint.color = hue.accentArgb
+            canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
+            val glyph = ContextCompat.getDrawable(context, Res.glyph(f.iconKey))?.mutate()
+            if (glyph != null) {
+                val tinted = DrawableCompat.wrap(glyph)
+                DrawableCompat.setTint(tinted, Color.WHITE)
+                val pad = (size * 0.24f).toInt()
+                tinted.setBounds(pad, pad, size - pad, size - pad)
+                tinted.draw(canvas)
+            }
+            IconCompat.createWithBitmap(bitmap)
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Android 16+: may the app show Live Updates (the user can switch it off per app)?
+     * Null when it can't be asked. Looked up by name so that a missing API can never break the build or the app.
+     */
+    fun canPostLiveUpdates(context: Context): Boolean? {
+        if (Build.VERSION.SDK_INT < 36) return null
+        return try {
+            val nm = context.getSystemService(NotificationManager::class.java) ?: return null
+            nm.javaClass.getMethod("canPostPromotedNotifications").invoke(nm) as? Boolean
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    private var lastLiveLog = ""
+
+    /** Writes one line to the log about how the system treats the focus notification (read by the emulator test). */
+    private fun logLiveStatus(context: Context) {
+        val app = context.applicationContext
+        ToDoApp.scope.launch {
+            delay(800)
+            val line = try {
+                val nm = app.getSystemService(NotificationManager::class.java)
+                val n = nm?.activeNotifications?.firstOrNull { it.id == ID_FOCUS }?.notification
+                val promotable = n?.let { it.javaClass.getMethod("hasPromotableCharacteristics").invoke(it) as? Boolean }
+                val flag = android.app.Notification::class.java.getField("FLAG_PROMOTED_ONGOING").getInt(null)
+                val promoted = n != null && (n.flags and flag) != 0
+                "canPost=${canPostLiveUpdates(app)} promotable=$promotable promotedFlag=$promoted posted=${n != null}" +
+                    " flags=0x" + Integer.toHexString(n?.flags ?: 0) +
+                    " progress=" + (n?.extras?.getInt("android.progress", -1) ?: -1)
+            } catch (e: Throwable) {
+                "status unavailable: $e"
+            }
+            if (line != lastLiveLog) {
+                lastLiveLog = line
+                Log.i("ToDoLive", line)
+            }
+        }
     }
 
     // ------------------------------------------------------------ next up (ongoing)

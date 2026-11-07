@@ -80,10 +80,15 @@ object Planner {
     fun nextAt(d: AppData, now: Long, zone: ZoneId): Long? =
         items(d, now, zone).firstOrNull { it.at > now }?.at
 
-    /** When widgets / the "next up" notification need to be redrawn next (block boundaries, midnight, 30 min). */
+    /**
+     * When widgets / the ongoing notifications need to be redrawn next (block boundaries, midnight, 30 min, and every
+     * minute while a focus session runs so that its progress bar keeps moving).
+     */
     fun nextRefreshAt(d: AppData, now: Long, zone: ZoneId): Long {
         val today = dayOf(now, zone)
         var best = minOf(millisOf(today + 1, 0, zone), now + 30L * MINUTE_MS)
+        val focus = d.focus
+        if (focus != null && focus.endsAt > now) best = minOf(best, now + MINUTE_MS)
         for (b in d.blocks) {
             if (b.day != today) continue
             val s = blockStart(b, zone)

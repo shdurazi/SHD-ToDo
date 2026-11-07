@@ -45,6 +45,7 @@ import com.shdurazi.todo.core.AppData
 import com.shdurazi.todo.core.Codec
 import com.shdurazi.todo.core.Fmt
 import com.shdurazi.todo.core.Queries
+import com.shdurazi.todo.notify.Notifier
 import com.shdurazi.todo.notify.ReminderEngine
 import com.shdurazi.todo.ui.UiState
 import com.shdurazi.todo.ui.components.Glyph
@@ -72,6 +73,16 @@ private fun openNotificationSettings(ctx: Context) {
     }
 }
 
+/** Android 16: the system page where Live Updates are switched on or off for this app (falls back to the app's notification page). */
+private fun openLiveUpdateSettings(ctx: Context) {
+    try {
+        val action = Settings::class.java.getField("ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS").get(null) as String
+        ctx.startActivity(Intent(action, Uri.parse("package:" + ctx.packageName)))
+    } catch (e: Exception) {
+        openNotificationSettings(ctx)
+    }
+}
+
 private fun openExactAlarmSettings(ctx: Context) {
     if (Build.VERSION.SDK_INT < 31) return
     val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + ctx.packageName))
@@ -94,6 +105,7 @@ fun SettingsScreen(ui: UiState, data: AppData, h24: Boolean, onBack: () -> Unit)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh += 1 }
     val notificationsOn = remember(refresh) { NotificationManagerCompat.from(ctx).areNotificationsEnabled() }
     val exactOk = remember(refresh) { ReminderEngine.canScheduleExact(ctx) }
+    val liveOn = remember(refresh) { Notifier.canPostLiveUpdates(ctx) }
     var showSummaryTime by remember { mutableStateOf(false) }
 
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -213,12 +225,27 @@ fun SettingsScreen(ui: UiState, data: AppData, h24: Boolean, onBack: () -> Unit)
                         onTap = { openExactAlarmSettings(ctx) }
                     )
                 }
+                if (liveOn != null) {
+                    GroupDivider()
+                    ValueRow(
+                        label = "Live updates",
+                        value = if (liveOn) "On" else "Off — tap to allow",
+                        valueColor = if (liveOn) Ink.TextDim else Color(0xFFFF9F0A),
+                        onTap = { openLiveUpdateSettings(ctx) }
+                    )
+                }
             }
             Txt(
-                text = "Reminders for to-dos with a time, alerts before blocks and the daily summary all use notifications.",
+                text = "Reminders for to-dos with a time, alerts before blocks and the daily summary all use notifications." +
+                    (if (liveOn != null) {
+                        " A running focus session shows up as a Live Update in the status bar. " +
+                            "On OnePlus phones also switch ToDo on under Notifications & Quick Settings › Live Alerts."
+                    } else {
+                        ""
+                    }),
                 size = 13.sp,
                 color = Ink.TextDim,
-                maxLines = 4,
+                maxLines = 8,
                 lineHeight = 18.sp,
                 modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp)
             )

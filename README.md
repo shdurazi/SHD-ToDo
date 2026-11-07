@@ -27,7 +27,9 @@
 - **Drag and drop.** Hold a to-do and drop it on a block, on an empty part of the timeline (a new block is created)
   or on the bin to delete it.
 - **Focus mode.** Tap a block to start a countdown with its to-dos next to it. The countdown also lives in a
-  notification (with a live chronometer and a *Stop* action).
+  notification (with a live chronometer and a *Stop* action). On Android 16 it is a *Live Update*: a countdown chip in
+  the status bar and a progress bar in the block's colour. On OnePlus phones it can sit in the *Live Alerts* capsule
+  around the camera: switch ToDo on under *Settings › Notifications & Quick Settings › Live Alerts*.
 - **Notifications.** To-do reminders (with *Done* and *Snooze*), a heads-up a few minutes before every block, a daily
   summary, and a note when a focus session ends. An optional ongoing notification shows what is next.
 - **Widgets.** *Tasks* (tick items off straight from the widget), *Timeline* and *Next up*. They are declared for the
@@ -93,7 +95,9 @@ Typeface: [Inter](https://rsms.me/inter/) (SIL Open Font License, see `licenses/
 - **جدول زمني لليوم** بفترات ملوّنة بأيقونة ومدة وتنبيه اختياري. اسحب شريط التاريخ لتغيير اليوم أو لتكبير الجدول
   وتصغيره، واضغط مطوّلاً على مكان فارغ لإضافة فترة.
 - **السحب والإفلات:** أمسك مهمة وأفلتها على فترة، أو على مكان فارغ (تُنشأ فترة جديدة)، أو على سلة الحذف.
-- **وضع التركيز:** اضغط على فترة لبدء العدّ التنازلي، ويظهر أيضاً في إشعار مع زر إيقاف.
+- **وضع التركيز:** اضغط على فترة لبدء العدّ التنازلي، ويظهر أيضاً في إشعار مع زر إيقاف. على أندرويد 16 يصير «Live Update»
+  (عدّاد في شريط الحالة وشريط تقدّم بلون الفترة)، وعلى أجهزة OnePlus يظهر في كبسولة Live Alerts حول الكاميرا بعد تفعيل
+  ToDo من: الإعدادات ← Notifications & Quick Settings ← Live Alerts.
 - **الإشعارات:** تذكير بالمهام (تم / تأجيل)، تنبيه قبل كل فترة، ملخص يومي، وإشعار عند انتهاء التركيز، مع إشعار دائم اختياري
   بما هو قادم.
 - **الودجت:** المهام (علّم المهمة منجزة من الودجت نفسه)، الجدول الزمني، و«التالي». معرَّفة للشاشة الرئيسية ولشاشة القفل؛

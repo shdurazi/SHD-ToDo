@@ -72,6 +72,67 @@ for variant in debug release; do
     crash_report "$OUT/logcat-click-$variant.txt"
     echo "::endgroup::"
 
+    echo "::group::[$variant] focus session and Live Update (API $API)"
+    adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
+    sleep 2
+    adb logcat -c
+    dump
+    XY=""
+    for name in "Deep work" "Lunch" "Wrap up"; do
+      XY=$(python3 scripts/ui_find.py "$name" < "$OUT/ui.xml")
+      if [ -n "$XY" ]; then echo "tap block '$name' at $XY"; break; fi
+    done
+    if [ -n "$XY" ]; then
+      adb shell input tap $XY
+    else
+      echo "no block visible: starting the session through the intent instead"
+      adb shell am start -n "$PKG/.MainActivity" -a com.shdurazi.todo.action.START_FOCUS --es block_id b-lunch > /dev/null 2>&1
+    fi
+    sleep 4
+    shot "$variant-7-focus"
+    dump; echo "--- UI nodes (focus screen)"; python3 scripts/ui_dump.py < "$OUT/ui.xml" | head -30
+    echo "--- notification record of the focus session"
+    adb shell dumpsys notification --noredact > "$OUT/notif-$variant.txt" 2>&1
+    grep -A70 "NotificationRecord.*pkg=$PKG.*id=103" "$OUT/notif-$variant.txt" | cut -c1-260 | head -80
+    echo "--- ToDoLive log"
+    adb logcat -d -s ToDoLive:I | tail -5
+    adb shell input keyevent 3
+    sleep 2
+    shot "$variant-8-home-with-focus"
+    adb shell cmd statusbar expand-notifications
+    sleep 2
+    shot "$variant-9-shade"
+    dump; echo "--- UI nodes (shade)"; python3 scripts/ui_dump.py < "$OUT/ui.xml" | grep -i -E "todo|left|until|stop|focus|deep|lunch|wrap" | head -20
+    adb shell cmd statusbar collapse
+    echo "waiting 75 s to see the notification being redrawn ..."
+    sleep 75
+    echo "--- ToDoLive log (after a minute)"
+    adb logcat -d -s ToDoLive:I | tail -5
+    adb shell cmd statusbar expand-notifications
+    sleep 2
+    shot "$variant-10-shade-later"
+    tap_text "Stop"
+    sleep 2
+    if adb shell dumpsys notification --noredact | grep -q "NotificationRecord.*pkg=$PKG.*id=103"; then
+      echo "RESULT[$variant]: focus notification still there after Stop"
+    else
+      echo "RESULT[$variant]: focus notification gone after Stop"
+    fi
+    adb shell cmd statusbar collapse
+    adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
+    sleep 2
+    tap_text "Settings"
+    sleep 1.5
+    shot "$variant-11-settings"
+    dump; echo "--- UI nodes (settings)"; python3 scripts/ui_dump.py < "$OUT/ui.xml" | head -40
+    adb shell input keyevent 4
+    sleep 1
+    adb logcat -d > "$OUT/logcat-focus-$variant.txt"
+    crash_report "$OUT/logcat-focus-$variant.txt"
+    PID3=$(adb shell pidof "$PKG" | tr -d '\r')
+    if [ -n "$PID3" ]; then echo "RESULT[$variant]: still running after the focus session"; else echo "RESULT[$variant]: DIED during the focus session"; fi
+    echo "::endgroup::"
+
     echo "::group::[$variant] monkey test (API $API)"
     adb logcat -c
     adb shell monkey -p "$PKG" -s 7 --throttle 150 --pct-syskeys 0 --pct-appswitch 0 --pct-nav 0 --pct-majornav 0 -v 300 > "$OUT/monkey-$variant.txt" 2>&1 || true
