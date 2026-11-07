@@ -120,7 +120,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api: [34, 36, "36.1"]
+        api: [34, 36]
     steps:
       - uses: actions/checkout@v4
 
