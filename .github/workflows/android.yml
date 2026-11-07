@@ -110,3 +110,45 @@ jobs:
           } > comment.md
           head -c 60000 comment.md > comment_cut.md
           gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" -F body=@comment_cut.md
+
+  # Starts the freshly built APKs on an Android emulator and keeps the log and screenshots,
+  # so a crash on launch shows up here instead of only on a phone.
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [34, 36]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ToDo-apk
+          path: dist
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run the app on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: bash scripts/smoke.sh ${{ matrix.api }}
+
+      - name: Keep the logs and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-api${{ matrix.api }}
+          path: smoke-out
+          if-no-files-found: ignore
