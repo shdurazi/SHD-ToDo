@@ -59,8 +59,10 @@ older one and keeps your data.
 Open **Settings › Island** in the app.
 
 1. Switch *Focus island* on and allow **Display over other apps**. The island now shows over your apps. Android draws the
-   status bar *above* such windows, so status icons next to the camera can overlap it and taps on the camera area itself
-   go to the status bar (the lower edge of the pill still takes taps).
+   status bar *above* such windows, so taps on the camera area itself go to the status bar: the closed island reaches a
+   little below the bar and that lower edge takes the tap, and the opened card hangs under the status bar so that its icons
+   do not cover it. A camera hole near the middle of the screen is wrapped by the island; on a phone without one (or with the
+   hole in a corner) the island sits at the top centre.
 2. For the full look — above the status bar, tappable, also on the lock screen — turn on the **ToDo island**
    accessibility service as well (*Settings › Accessibility › Installed apps*). If it is greyed out, open *App info › ⋮ ›
    Allow restricted settings* first. The service only gives ToDo a window to draw in: it declares no content access, so it
@@ -144,8 +146,10 @@ Typeface: [Inter](https://rsms.me/inter/) (SIL Open Font License, see `licenses/
 من التطبيق: **Settings ‹ Island**.
 
 1. فعّل *Focus island* واسمح بـ **Display over other apps**. بعدها تظهر الجزيرة فوق التطبيقات. أندرويد يرسم شريط الحالة
-   *فوق* هذا النوع من النوافذ، فقد تتداخل أيقونات الحالة القريبة من الكاميرا مع الجزيرة، والضغط على منطقة الكاميرا نفسها
-   يذهب لشريط الحالة (الحافة السفلية من الكبسولة تستقبل الضغط).
+   *فوق* هذا النوع من النوافذ، لذلك الضغط على منطقة الكاميرا نفسها يذهب لشريط الحالة: الجزيرة المغلقة تنزل قليلاً تحت
+   الشريط وهذه الحافة السفلية هي التي تستقبل الضغط، والبطاقة المفتوحة تتدلى تحت شريط الحالة حتى لا تغطيها أيقوناته.
+   إذا كانت فتحة الكاميرا قرب منتصف الشاشة تلتف الجزيرة حولها، وإلا (لا توجد فتحة أو هي في الزاوية) تظهر في أعلى
+   المنتصف.
 2. للشكل الكامل — فوق شريط الحالة، قابلة للضغط، وتظهر على شاشة القفل — فعّل أيضاً خدمة إمكانية الوصول **ToDo island**
    (الإعدادات ← إمكانية الوصول ← التطبيقات المثبّتة). إذا كانت باهتة وغير قابلة للضغط افتح *معلومات التطبيق ← ⋮ ←
    السماح بالإعدادات المقيّدة* أولاً. الخدمة فقط تعطي ToDo نافذة يرسم فيها ولا تطلب الوصول لمحتوى الشاشة فلا تقرأها.
