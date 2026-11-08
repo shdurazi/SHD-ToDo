@@ -273,7 +273,13 @@ island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <motion: 
   echo "::endgroup::"
 }
 
+GROUP="${2:-all}" # all | base | overlay | a11y-debug | a11y-release: CI gives every part its own emulator (one that vanishes costs one part)
+want() { [ "$GROUP" = all ] || [ "$GROUP" = "$1" ]; }
+echo "part of the test on this emulator: $GROUP"
+settle 150
+
 for variant in debug release; do
+  want base || break
   APK="dist/ToDo-$variant.apk"
   guard "the $variant build"
   echo "::group::[$variant] install and start (API $API)"
@@ -398,19 +404,6 @@ for variant in debug release; do
     if [ -n "$PID3" ]; then echo "RESULT[$variant]: still running after the focus session"; else echo "RESULT[$variant]: DIED during the focus session"; fi
     echo "::endgroup::"
 
-    guard "the island tests of the $variant build"
-    if [ "$variant" = debug ]; then
-      # a camera hole like a real phone's: the motion (slow-motion films, the Preview row) is looked at here, first
-      island_test "$variant" emu01 no yes overlay
-      # an imaginary hole at the top centre, and a tall one
-      island_test "$variant" hole no no overlay
-      island_test "$variant" tall no no overlay
-    else
-      island_test "$variant" emu01 no no overlay
-      island_test "$variant" hole no no overlay
-    fi
-    cutout_set none
-
     guard "the monkey test of the $variant build"
     echo "::group::[$variant] monkey test (API $API)"
     adb logcat -c
@@ -423,10 +416,32 @@ for variant in debug release; do
   fi
 done
 
-# The accessibility window comes last: if the emulator goes away in here (it did, see scripts/probe.sh), everything else
-# has been seen already.
+# The island in the plain overlay window (the default way to run it)
 for variant in debug release; do
+  want overlay || break
+  guard "the overlay island tests of the $variant build"
+  adb uninstall "$PKG" > /dev/null 2>&1 || true
+  adb install -r "dist/ToDo-$variant.apk" > /dev/null || { echo "RESULT[$variant]: install failed"; continue; }
+  adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS > /dev/null 2>&1 || true
+  if [ "$variant" = debug ]; then
+    # a camera hole like a real phone's: the motion (slow-motion films, the Preview row) is looked at here, first
+    island_test "$variant" emu01 no yes overlay
+    # an imaginary hole at the top centre, and a tall one
+    island_test "$variant" hole no no overlay
+    island_test "$variant" tall no no overlay
+  else
+    island_test "$variant" emu01 no no overlay
+    island_test "$variant" hole no no overlay
+  fi
+  cutout_set none
+done
+
+# The island in the accessibility window (above the status bar, on the lock screen): the emulators sometimes stop
+# answering in here (see scripts/probe.sh), which is why it has parts of its own.
+for variant in debug release; do
+  want "a11y-$variant" || continue
   guard "the accessibility window tests of the $variant build"
+  adb uninstall "$PKG" > /dev/null 2>&1 || true
   adb install -r "dist/ToDo-$variant.apk" > /dev/null || { echo "RESULT[$variant]: install failed"; continue; }
   adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS > /dev/null 2>&1 || true
   if [ "$variant" = debug ]; then
