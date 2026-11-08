@@ -62,12 +62,12 @@ sheet() { # sheet <mp4> <jpg> <start s> <length s> <fps> <label>: a contact shee
   echo "SHOT-BEGIN $6"; base64 -w0 "$2"; echo; echo "SHOT-END $6"
 }
 
-film() { # film <name> <label> <command...>: records the screen (12 s) around the command and prints 3 contact sheets
-  local name=$1 label=$2 rp
-  shift 2
-  if ! command -v ffmpeg > /dev/null; then "$@"; sleep 11; return; fi
+film() { # film <name> <label> <seconds> <command...>: records the screen around the command, prints contact sheets
+  local name=$1 label=$2 secs=$3 rp st i=1
+  shift 3
+  if ! command -v ffmpeg > /dev/null; then "$@"; sleep $((secs - 1)); return; fi
   adb shell rm -f /sdcard/film.mp4 > /dev/null 2>&1
-  adb shell screenrecord --time-limit 12 /sdcard/film.mp4 > /dev/null 2>&1 &
+  adb shell screenrecord --time-limit "$secs" /sdcard/film.mp4 > /dev/null 2>&1 &
   rp=$!
   sleep 1.5
   "$@"
@@ -75,9 +75,11 @@ film() { # film <name> <label> <command...>: records the screen (12 s) around th
   sleep 1
   if adb pull /sdcard/film.mp4 "$OUT/$name.mp4" > /dev/null 2>&1; then
     echo "recording $name: $(stat -c %s "$OUT/$name.mp4") bytes, $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT/$name.mp4" 2>/dev/null) s"
-    sheet "$OUT/$name.mp4" "$OUT/$name-1.jpg" 1.6 3.2 5 "$label-1"
-    sheet "$OUT/$name.mp4" "$OUT/$name-2.jpg" 4.8 3.2 5 "$label-2"
-    sheet "$OUT/$name.mp4" "$OUT/$name-3.jpg" 8.0 3.2 5 "$label-3"
+    for st in 1.6 4.8 8.0 11.2 14.4 17.6 20.8; do
+      awk "BEGIN{exit !($st < $secs)}" || break
+      sheet "$OUT/$name.mp4" "$OUT/$name-$i.jpg" "$st" 3.2 5 "$label-$i"
+      i=$((i + 1))
+    done
   else
     echo "no recording for $name"
   fi
@@ -95,9 +97,51 @@ cutout_set() { # cutout_set <name|none>: shows one of the emulator's camera cuto
   echo "cutout '$1': $(adb shell dumpsys display | grep -a -m1 -o 'DisplayCutout{.*' | cut -c1-420)"
 }
 
-island_test() { # island_test <variant> <cutout> <full: yes|no>
-  local v=$1 cfg=$2 full=$3 t="$1-$2" PX PY PB CX CY DENS
+island_preview() { # island_preview <test name>: taps "Preview" in Settings > Island and films what happens
+  local t=$1 XY="" i
+  adb shell input keyevent 4
+  sleep 1.5
+  dump
+  if [ -z "$(python3 scripts/ui_find.py "Settings" < "$OUT/ui.xml")" ]; then
+    adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
+    sleep 2
+  fi
+  tap_text "Settings"
+  for i in 1 2 3 4 5 6 7 8; do
+    dump
+    XY=$(python3 scripts/ui_find.py "Show the island" < "$OUT/ui.xml")
+    [ -n "$XY" ] && break
+    adb shell input swipe 540 1900 540 800 250
+    sleep 0.8
+  done
+  if [ -z "$XY" ]; then
+    echo "no Preview row found in Settings"
+    shot "$t-settings-no-preview"
+    return
+  fi
+  echo "tap Preview at $XY"
+  shot "$t-settings-island"
+  film "$t-preview" "$t-island-preview" 12 adb shell input tap $XY
+  adb shell input keyevent 4
+  sleep 1
+}
+
+island_slowmo() { # island_slowmo <test name> <label>: the intro again with all animations 6 times slower
+  local t=$1 name=$2
+  adb shell settings put global animator_duration_scale 6
+  adb shell am start -n "$PKG/.MainActivity" -a com.shdurazi.todo.action.START_FOCUS --es block_id b-deep > /dev/null 2>&1
+  sleep 3
+  film "$t-$name" "$t-island-slow-$name" 18 adb shell input keyevent 3
+  adb shell settings put global animator_duration_scale 1
+  adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
+  sleep 2
+}
+
+island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <slow motion: yes|no>
+  local v=$1 cfg=$2 full=$3 slow=$4 t="$1-$2" PX PY PB CX CY DENS
   echo "::group::[$v] island, cutout '$cfg' (API $API)"
+  # the emulator action switches all animations off; the island's own animations need to run
+  adb shell settings put global animator_duration_scale 1
   cutout_set "$cfg"
   adb shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow
   echo "overlay permission: $(adb shell appops get "$PKG" SYSTEM_ALERT_WINDOW | tr -d '\r')"
@@ -109,8 +153,15 @@ island_test() { # island_test <variant> <cutout> <full: yes|no>
   sleep 3
   adb exec-out screencap -p > "$OUT/$t-island-app.png"
   top_shot "$OUT/$t-island-app.png" "$t-island-1-app-in-front"
+  if [ "$slow" = yes ]; then
+    echo "--- 1b. the Preview row in Settings: the island over the app itself"
+    island_preview "$t"
+  fi
   echo "--- 2. Home: the island should pop in, open, turn the dial and close again (plain overlay window)"
-  film "$t-ov" "$t-island-2-overlay" adb shell input keyevent 3
+  adb shell dumpsys gfxinfo "$PKG" reset > /dev/null 2>&1
+  film "$t-ov" "$t-island-2-overlay" 12 adb shell input keyevent 3
+  echo "--- frame statistics of the island windows (software rendering: only good for comparing)"
+  adb shell dumpsys gfxinfo "$PKG" | grep -a -E "Total frames rendered|Janky frames|50th|90th|95th|99th" | head -6
   adb exec-out screencap -p > "$OUT/$t-ov-closed.png"
   top_shot "$OUT/$t-ov-closed.png" "$t-island-3-overlay-closed"
   echo "--- ToDoIsland log (overlay)"
@@ -135,6 +186,11 @@ island_test() { # island_test <variant> <cutout> <full: yes|no>
     adb logcat -d -s ToDoIsland:I | grep -E "tap on the card|fade out|detached" | tail -4
   fi
 
+  if [ "$slow" = yes ]; then
+    echo "--- 4b. slow motion, plain overlay window"
+    island_slowmo "$t" ov-slow
+  fi
+
   echo "--- 5. the accessibility window (above the status bar, on the lock screen)"
   adb shell settings put secure enabled_accessibility_services "$PKG/com.shdurazi.todo.island.IslandAccessibilityService"
   adb shell settings put secure accessibility_enabled 1
@@ -143,7 +199,7 @@ island_test() { # island_test <variant> <cutout> <full: yes|no>
   adb shell am start -n "$PKG/.MainActivity" -a com.shdurazi.todo.action.START_FOCUS --es block_id b-wrap > /dev/null 2>&1
   sleep 3
   adb logcat -c
-  film "$t-a11y" "$t-island-5-a11y" adb shell input keyevent 3
+  film "$t-a11y" "$t-island-5-a11y" 12 adb shell input keyevent 3
   adb exec-out screencap -p > "$OUT/$t-a11y-closed.png"
   top_shot "$OUT/$t-a11y-closed.png" "$t-island-6-a11y-closed"
   echo "--- ToDoIsland log (accessibility)"
@@ -160,6 +216,11 @@ island_test() { # island_test <variant> <cutout> <full: yes|no>
     sleep 2.5
     echo "resumed: $(adb shell dumpsys activity activities | grep -m1 -E 'topResumedActivity|mResumedActivity' | cut -c1-200)"
     adb logcat -d -s ToDoIsland:I | grep -E "tap on the card|fade out|detached" | tail -4
+  fi
+
+  if [ "$slow" = yes ]; then
+    echo "--- 5b. slow motion, accessibility window"
+    island_slowmo "$t" a11y-slow
   fi
 
   if [ "$full" = yes ]; then
@@ -186,6 +247,7 @@ island_test() { # island_test <variant> <cutout> <full: yes|no>
   adb shell settings put secure enabled_accessibility_services "" > /dev/null 2>&1
   adb shell settings put secure accessibility_enabled 0 > /dev/null 2>&1
   adb shell appops set "$PKG" SYSTEM_ALERT_WINDOW default > /dev/null 2>&1
+  adb shell settings put global animator_duration_scale 0
   adb shell am force-stop "$PKG"
   adb logcat -d > "$OUT/logcat-island-$t.txt"
   crash_report "$OUT/logcat-island-$t.txt"
@@ -316,10 +378,10 @@ for variant in debug release; do
     if [ -n "$PID3" ]; then echo "RESULT[$variant]: still running after the focus session"; else echo "RESULT[$variant]: DIED during the focus session"; fi
     echo "::endgroup::"
 
-    island_test "$variant" hole yes
+    island_test "$variant" hole yes no
+    island_test "$variant" emu01 no yes
     if [ "$variant" = debug ]; then
-      island_test "$variant" emu01 no
-      island_test "$variant" tall no
+      island_test "$variant" tall no no
     fi
     cutout_set none
 

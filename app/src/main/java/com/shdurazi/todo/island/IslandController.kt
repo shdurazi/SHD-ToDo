@@ -354,7 +354,14 @@ object IslandController {
         Log.i(TAG, "intro (kind=$kind)")
         if (popIn) view?.popIn()
         main.removeCallbacks(introOpen)
-        main.postDelayed(introOpen, if (popIn) INTRO_DELAY_MS else 0L)
+        main.postDelayed(introOpen, if (popIn) (INTRO_DELAY_MS * animationScale(ctx)).toLong() else 0L)
+    }
+
+    /** The phone's animation speed setting (1 = normal, 2 = twice as slow...), never below 1 so that the intro still waits a moment. */
+    private fun animationScale(ctx: Context): Float = try {
+        Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f).coerceIn(1f, 10f)
+    } catch (e: Throwable) {
+        1f
     }
 
     // ---------------------------------------------------------------- the window
