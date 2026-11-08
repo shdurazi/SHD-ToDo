@@ -72,6 +72,15 @@ Open **Settings › Island** in the app.
 While the island is on, the focus notification is a normal ongoing notification (no Live Update chip), so the system
 capsule and the island do not fight over the same spot. Switch the island off to get the Live Update back.
 
+**How far this has been tested.** In CI the island runs on Android 14 and Android 16 emulators (debug and release builds,
+with emulated camera holes of three sizes): the pop-in, the spring opening, the turning dial with its glow, the closing,
+taps on the closed island and on the card, the *Preview* row, and — with the accessibility service — the window above the
+status bar, also on the lock screen. It has **not** been run on a real phone with a real camera hole, so spacing against the
+real status bar and the manufacturer's battery rules may still differ. If the accessibility mode misbehaves on your phone,
+switch the service off: the first mode works without it. (The emulator itself froze within minutes in the accessibility
+mode when it used its `swiftshader_indirect` graphics, and never with `swangle_indirect`; the CI therefore uses the latter
+for that part.)
+
 ### Build it yourself
 
 Requirements: JDK 17 and the Android SDK (platform 36).
@@ -158,3 +167,11 @@ Typeface: [Inter](https://rsms.me/inter/) (SIL Open Font License, see `licenses/
 
 وأثناء تفعيل الجزيرة يصير إشعار التركيز إشعاراً دائماً عادياً (بدون شريحة Live Update) حتى لا تتعارض الكبسولة النظامية
 مع الجزيرة. أوقف الجزيرة لترجع Live Update.
+
+**ما الذي اختُبر.** تُشغَّل الجزيرة في CI على محاكيات أندرويد 14 و16 (نسخة debug ونسخة release، مع فتحات كاميرا
+مُحاكاة بثلاثة أحجام): الظهور، الفتح النابضي، القرص الدائر مع التوهج، الإغلاق، الضغط على الجزيرة المغلقة وعلى البطاقة،
+صف *Preview*، ومع خدمة إمكانية الوصول أيضاً النافذة فوق شريط الحالة وعلى شاشة القفل. **لم** تُجرَّب بعد على هاتف حقيقي
+بفتحة كاميرا حقيقية، فقد تختلف المسافات مع شريط الحالة الحقيقي وقيود البطارية عند الشركة المصنّعة. إذا تصرّف وضع
+إمكانية الوصول بشكل غريب على هاتفك فأوقف الخدمة: الوضع الأول يعمل بدونها. (المحاكي نفسه كان يتجمّد خلال دقائق في وضع
+إمكانية الوصول عندما يستخدم رسم `swiftshader_indirect`، ولم يتجمّد أبداً مع `swangle_indirect`؛ لذلك يستخدم CI الثاني
+لهذا الجزء.)
