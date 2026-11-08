@@ -59,6 +59,9 @@ object IslandController {
     private const val DONE_HOLD_MS = 4_200L
     private const val PREVIEW_MS = 9_500L
 
+    /** How long a wider size has to be wanted before the island takes it (getting smaller never waits). */
+    private const val WIDER_AFTER_MS = 8_000L
+
     private val main = Handler(Looper.getMainLooper())
 
     /** The accessibility service is connected (readable from any thread). */
@@ -86,6 +89,10 @@ object IslandController {
     /** Counts the card's opening and closing steps, so that a delayed step of an older one can tell it is out of date. */
     private var cardGen = 0
     private var geo: IslandView.Geo? = null
+
+    /** The size the island has now (see [IslandFit]), and since when something wider has been wanted. */
+    private var fit = IslandFit.WIDE
+    private var widerSince = 0L
     private var shownKind = 0
     private var shownKey = 0L
     private var lastModel: IslandView.Model? = null
@@ -113,6 +120,9 @@ object IslandController {
         post(a, "settings")
         resyncNotification(a)
     }
+
+    /** The size was picked in the settings: the island on the screen moves to it. Any thread. */
+    fun fitChanged(context: Context) = post(context, "size")
 
     /** Shows a demo island for a few seconds, whatever the app is doing. Any thread. */
     fun preview(context: Context) {
@@ -407,7 +417,7 @@ object IslandController {
     }
 
     private fun attach(ctx: Context, host: Host, model: IslandView.Model): Boolean {
-        val g = computeGeo(ctx, host.overlay)
+        val g = computeGeo(ctx, host.overlay, chooseFit(ctx, host.overlay, true))
         if (g == null) {
             Log.i(TAG, "no geometry (landscape?)")
             return false
@@ -439,9 +449,43 @@ object IslandController {
         Log.i(
             TAG,
             "attach host=${host.name} pill=${g.pill.toShortString()} card=${g.card.toShortString()} " +
-                "cutout=${g.cutout.toShortString()} virtual=${g.virtualHole} density=${g.density}"
+                "cutout=${g.cutout.toShortString()} virtual=${g.virtualHole} density=${g.density} size=${IslandFit.name(g.fit)} " +
+                "(${fitNote})"
         )
         return true
+    }
+
+    /** Why the island has the size it has, for the log. */
+    private var fitNote = ""
+
+    /**
+     * The size the island should have now. Getting smaller happens at once; getting wider waits until the wider size has
+     * been wanted for a while, so that an icon that comes and goes does not make the island pump. A size the person
+     * picked in the settings is used as it is.
+     */
+    private fun chooseFit(ctx: Context, overlayHost: Boolean, firstLook: Boolean): Int {
+        if (!overlayHost) {
+            // above the status bar nothing is in the way
+            fit = IslandFit.WIDE
+            widerSince = 0L
+            fitNote = "no icons above"
+            return fit
+        }
+        val pick = IslandFit.pick(ctx)
+        val want = pick.mode
+        fitNote = if (!pick.auto) "chosen: ${IslandFit.name(want)}" else "auto: ${pick.guess?.icons ?: 0} icons ${pick.guess?.what ?: ""}"
+        if (firstLook || !pick.auto || want >= fit) {
+            fit = want
+            widerSince = 0L
+        } else {
+            val now = System.currentTimeMillis()
+            if (widerSince == 0L) widerSince = now
+            if (now - widerSince >= WIDER_AFTER_MS) {
+                fit = want
+                widerSince = 0L
+            }
+        }
+        return fit
     }
 
     /** Callbacks of the pill's window. */
@@ -713,6 +757,8 @@ object IslandController {
         wm = null
         params = null
         geo = null
+        fit = IslandFit.WIDE
+        widerSince = 0L
         hostContext = null
         shownModel = null
         fading = false
@@ -726,22 +772,30 @@ object IslandController {
     /** Looks again at the screen (rotation, display size, font size...) and moves the island if something changed. */
     private fun checkGeometry(ctx: Context) {
         val v = view ?: return
-        val g = computeGeo(ctx, hostName == "overlay")
+        val overlay = hostName == "overlay"
+        val g = computeGeo(ctx, overlay, chooseFit(ctx, overlay, false))
         if (g == null) {
             detach("no geometry")
             return
         }
         val old = geo
         if (old == null || !sameGeo(old, g)) {
+            val moved = old == null || !sameFrame(old, g)
             geo = g
             v.setGeo(g)
             card?.setGeo(g)
-            relayout()
-            Log.i(TAG, "geometry changed: pill=${g.pill.toShortString()} card=${g.card.toShortString()}")
+            // a change of size alone leaves the windows where they are: the pill only moves inside its frame
+            if (moved) relayout()
+            Log.i(
+                TAG,
+                "geometry changed: pill=${g.pill.toShortString()} card=${g.card.toShortString()} size=${IslandFit.name(g.fit)} ($fitNote)"
+            )
         }
     }
 
-    private fun sameGeo(a: IslandView.Geo, b: IslandView.Geo): Boolean =
+    private fun sameGeo(a: IslandView.Geo, b: IslandView.Geo): Boolean = sameFrame(a, b) && a.fit == b.fit
+
+    private fun sameFrame(a: IslandView.Geo, b: IslandView.Geo): Boolean =
         abs(a.density - b.density) < 0.001f && abs(a.titleRight - b.titleRight) < 0.5f && same(a.pill, b.pill) &&
             same(a.card, b.card) && same(a.cutout, b.cutout)
 
@@ -754,7 +808,7 @@ object IslandController {
      * wider than a pill, no hole at all) leaves the island at the top centre with an imaginary hole, so that it looks the
      * same on every phone. Null in landscape.
      */
-    private fun computeGeo(ctx: Context, overlayHost: Boolean): IslandView.Geo? {
+    private fun computeGeo(ctx: Context, overlayHost: Boolean, wantFit: Int): IslandView.Geo? {
         val dm = ctx.getSystemService(DisplayManager::class.java) ?: return null
         val display = dm.getDisplay(Display.DEFAULT_DISPLAY) ?: return null
         val rotation = display.rotation
@@ -792,13 +846,24 @@ object IslandController {
         var bottom = top + pillH
         // under the status bar the part of the pill inside the bar can't be tapped: let a strip of it hang below
         if (overlayHost) bottom = max(bottom, statusBar + 8f * d)
-        val pillW = min(max(hole.width() + 2f * 62f * d, 120f * d), sw - 2f * margin)
-        val pcx = hole.centerX().coerceIn(pillW / 2f + margin, sw - pillW / 2f - margin)
-        val pill = RectF(pcx - pillW / 2f, top, pcx + pillW / 2f, bottom)
+
+        // The pill's frame is the widest the pill gets. Below the status bar the pill follows the icons next to the camera
+        // (IslandFit), so its frame reaches as far left as the "left" size does; above the bar it is always the wide pill.
+        val ringD = IslandFit.ringD(bottom - top, d)
+        var leftEar = IslandFit.leftEar(IslandFit.WIDE, ringD, d)
+        val rightEar = IslandFit.rightEar(IslandFit.WIDE, d)
+        if (overlayHost) leftEar = max(leftEar, IslandFit.leftEar(IslandFit.LEFT, ringD, d))
+        var usedFit = if (overlayHost) wantFit else IslandFit.WIDE
+        if (hole.left - leftEar < margin || hole.right + rightEar > sw - margin) {
+            // no room for the other sizes on a screen this narrow: stay with the wide pill, as small as the screen needs
+            usedFit = IslandFit.WIDE
+            leftEar = min(IslandFit.leftEar(IslandFit.WIDE, ringD, d), hole.left - margin)
+        }
+        val pill = RectF(hole.left - leftEar, top, min(hole.right + rightEar, sw - margin), bottom)
 
         val cardW = min(sw - 2f * margin, sw * 0.92f)
         val half = cardW / 2f
-        val ccx = pcx.coerceIn(half + margin, sw - half - margin)
+        val ccx = hole.centerX().coerceIn(half + margin, sw - half - margin)
         // above the status bar (accessibility window) the card grows out of the camera; below it (plain overlay) the
         // status bar's own icons are drawn over the window, so the card hangs underneath them
         val cardTop = if (overlayHost) max(top, statusBar + 4f * d) else top
@@ -808,6 +873,6 @@ object IslandController {
         // next to a real camera the pill's content sits at the camera's height; with an imaginary hole there is nothing to
         // line up with, so it sits in the middle of the pill (which reaches below the status bar in the overlay window)
         val contentY = if (virtualHole) pill.centerY() else hole.centerY()
-        return IslandView.Geo(card, pill, hole, d, contentY, titleRight, virtualHole)
+        return IslandView.Geo(card, pill, hole, d, contentY, titleRight, virtualHole, usedFit)
     }
 }

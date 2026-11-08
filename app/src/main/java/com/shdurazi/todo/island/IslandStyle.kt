@@ -34,8 +34,30 @@ object IslandPrefs {
     private const val KEY_ON = "enabled"
     private const val KEY_INTRO = "intro_for"
     private const val KEY_FAILED = "failed"
+    private const val KEY_FIT = "fit"
 
     private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+
+    /** The size the person picked in the settings ([IslandFit.AUTO] unless they chose one). */
+    fun fitSaved(context: Context): Int = try {
+        prefs(context).getInt(KEY_FIT, IslandFit.AUTO).coerceIn(IslandFit.AUTO, IslandFit.CHOICE_RING)
+    } catch (e: Exception) {
+        IslandFit.AUTO
+    }
+
+    /** The size to go by: the saved one, or in a debug build the one the emulator test set. */
+    fun fit(context: Context): Int {
+        val test = IslandFit.debugChoice(context)
+        return if (test >= 0) test else fitSaved(context)
+    }
+
+    fun setFit(context: Context, choice: Int) {
+        try {
+            prefs(context).edit().putInt(KEY_FIT, choice).apply()
+        } catch (e: Exception) {
+            // not worth failing over
+        }
+    }
 
     /** The switch in the settings. */
     fun enabled(context: Context): Boolean = try {

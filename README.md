@@ -67,6 +67,24 @@ Open **Settings › Island** in the app.
    corner) the island sits at the top centre.
 2. *Preview* shows the island without a running session.
 
+**Island size (Settings › Island size).** The status bar paints its own icons (alarm, headphones, Wi-Fi, signal...) over
+the island, and an app cannot look at them without an accessibility service or notification access, which Google Play
+Protect blocks (see below). So the island goes by what the phone reports to any app, and gets smaller when something
+that would be a status bar icon next to the camera is on:
+
+| Size | What it looks like |
+|---|---|
+| *Wide* | the ring left of the camera, the time right of it (the Anchor picture) |
+| *Left* | the ring and the time both left of the camera, the right half pulled in |
+| *Small* | the ring alone |
+| *Auto* (default) | *Wide* when nothing is reported, *Left* as soon as there is an alarm, connected headphones, Wi-Fi, a VPN, Do Not Disturb or silent mode |
+
+It changes with a short slide (getting smaller at once, getting wider after about eight seconds of calm, so that an icon
+that comes and goes does not make it pump). Settings says what Auto sees right now. The guess is only a guess: it cannot
+know the notification icons on the left, or how wide your phone's status bar icons are. If it is wrong, pick a size
+yourself. (Above the status bar, in the debug build's accessibility window, nothing is in the way and the island is
+always wide. Right-to-left status bars, where the icons sit on the other side, are not handled.)
+
 While the island is on, the focus notification is a normal ongoing notification (no Live Update chip), so the system
 capsule and the island do not fight over the same spot. Switch the island off to get the Live Update back.
 
@@ -166,6 +184,22 @@ Typeface: [Inter](https://rsms.me/inter/) (SIL Open Font License, see `licenses/
    المفتوحة تتدلى تحت شريط الحالة حتى لا تغطيها أيقوناته. إذا كانت فتحة الكاميرا قرب منتصف الشاشة تلتف الجزيرة حولها، وإلا
    (لا توجد فتحة أو هي في الزاوية) تظهر في أعلى المنتصف.
 2. زر *Preview* يعرض الجزيرة بدون جلسة تركيز.
+
+**حجم الجزيرة (Settings ‹ Island size).** شريط الحالة يرسم أيقوناته (المنبّه، السماعات، الواي فاي، الشبكة...) فوق الجزيرة،
+ولا يستطيع التطبيق رؤيتها بدون خدمة إمكانية وصول أو وصول للإشعارات، وهذان يحجبهما Google Play Protect (انظر أدناه). لذلك
+تعتمد الجزيرة على ما يخبر به الهاتف أي تطبيق، وتصغر عندما يكون شيء مما يظهر كأيقونة في شريط الحالة قرب الكاميرا شغّالاً:
+
+| الحجم | شكله |
+|---|---|
+| *Wide* | الحلقة يسار الكاميرا والوقت يمينها (شكل Anchor) |
+| *Left* | الحلقة والوقت كلاهما يسار الكاميرا، والنصف الأيمن ينكمش |
+| *Small* | الحلقة فقط |
+| *Auto* (الافتراضي) | *Wide* إذا لم يُبلَّغ بشيء، و*Left* بمجرد وجود منبّه أو سماعات متصلة أو واي فاي أو VPN أو عدم الإزعاج أو الوضع الصامت |
+
+يتغير الحجم بانزلاق قصير (يصغر فوراً، ويكبر بعد نحو ثماني ثوانٍ من الهدوء حتى لا «تنبض» الجزيرة إذا كانت أيقونة تظهر وتختفي).
+والإعدادات تقول ما الذي يراه Auto الآن. وهو مجرد تقدير: لا يعرف أيقونات الإشعارات على اليسار ولا عرض أيقونات شريط الحالة
+في هاتفك. إذا أخطأ فاختر الحجم بنفسك. (فوق شريط الحالة، في نافذة إمكانية الوصول لنسخة debug، لا شيء في الطريق فتبقى
+الجزيرة واسعة دائماً. وشريط الحالة من اليمين لليسار، حيث تكون الأيقونات في الجهة الأخرى، غير مدعوم.)
 
 وأثناء تفعيل الجزيرة يصير إشعار التركيز إشعاراً دائماً عادياً (بدون شريحة Live Update) حتى لا تتعارض الكبسولة النظامية
 مع الجزيرة. أوقف الجزيرة لترجع Live Update.

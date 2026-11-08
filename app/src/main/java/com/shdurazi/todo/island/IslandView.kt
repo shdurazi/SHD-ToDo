@@ -60,6 +60,9 @@ class IslandView(context: Context) : View(context) {
      * Screen-space geometry: the open card, the closed pill, the camera hole, the density and the line the pill's content
      * sits on. [titleRight] is how far to the right the card's title may reach (the camera hole is in its way when the
      * card is at the top of the screen); [virtualHole] says that [cutout] is an imaginary hole at the top centre.
+     *
+     * [pill] is the pill's frame, the widest it ever gets: the window is that big. What is drawn inside it is the pill in
+     * the size [fit] (see [IslandFit]), which follows the status bar.
      */
     class Geo(
         val card: RectF,
@@ -68,7 +71,8 @@ class IslandView(context: Context) : View(context) {
         val density: Float,
         val cy: Float,
         val titleRight: Float,
-        val virtualHole: Boolean
+        val virtualHole: Boolean,
+        val fit: Int = IslandFit.WIDE
     )
 
     var onTapPill: (() -> Unit)? = null
@@ -85,6 +89,15 @@ class IslandView(context: Context) : View(context) {
     private var model: Model? = null
     private var geo: Geo? = null
     private val loc = IntArray(2)
+
+    // The size of the compact pill (see IslandFit) moves from one layout to the next: the pill's ears, the ring and the
+    // time follow [fitT] (0..1, already eased) from [layFrom] to [layTo].
+    private val layFrom = IslandFit.Lay()
+    private val layTo = IslandFit.Lay()
+    private val layTmp = IslandFit.Lay()
+    private var fitT = 1f
+    private var fitAnim: ValueAnimator? = null
+    private val pillNow = RectF()
 
     /** 0 = pill, 1 = card; goes a little past 1 while the card springs open. */
     private var morph = 0f
@@ -155,8 +168,58 @@ class IslandView(context: Context) : View(context) {
     }
 
     fun setGeo(g: Geo) {
+        val old = geo
+        // only the size changed (the window stays where it is): move there; anything else (rotation...) jumps
+        val move = old != null && old.fit != g.fit && sameBox(old, g) && !broken
+        if (move) blendInto(layTmp)
         geo = g
+        IslandFit.fill(g.fit, g.cutout, g.pill.height(), g.density, layTo)
+        if (move) {
+            layFrom.set(layTmp)
+            startFit()
+        } else {
+            fitAnim?.cancel()
+            layFrom.set(layTo)
+            fitT = 1f
+        }
         invalidate()
+    }
+
+    private fun sameBox(a: Geo, b: Geo): Boolean =
+        abs(a.density - b.density) < 0.001f && sameRect(a.pill, b.pill) && sameRect(a.cutout, b.cutout) && sameRect(a.card, b.card)
+
+    private fun sameRect(a: RectF, b: RectF): Boolean =
+        abs(a.left - b.left) < 0.5f && abs(a.top - b.top) < 0.5f && abs(a.right - b.right) < 0.5f && abs(a.bottom - b.bottom) < 0.5f
+
+    /** The layout as it is drawn at this moment, so that a new move can start from there. */
+    private fun blendInto(out: IslandFit.Lay) {
+        val t = fitT
+        out.leftEar = lerp(layFrom.leftEar, layTo.leftEar, t)
+        out.rightEar = lerp(layFrom.rightEar, layTo.rightEar, t)
+        out.ringX = lerp(layFrom.ringX, layTo.ringX, t)
+        if (t >= 0.5f) {
+            out.timeX = layTo.timeX
+            out.timeRoom = layTo.timeRoom
+            out.timeA = layTo.timeA * smooth(0.5f, 1f, t)
+        } else {
+            out.timeX = layFrom.timeX
+            out.timeRoom = layFrom.timeRoom
+            out.timeA = layFrom.timeA * (1f - smooth(0f, 0.5f, t))
+        }
+    }
+
+    private fun startFit() {
+        fitAnim?.cancel()
+        fitT = 0f
+        val a = ValueAnimator.ofFloat(0f, 1f)
+        a.duration = 380
+        a.interpolator = DecelerateInterpolator(1.8f)
+        a.addUpdateListener {
+            fitT = it.animatedValue as Float
+            invalidate()
+        }
+        fitAnim = a
+        a.start()
     }
 
     fun popIn() {
@@ -294,6 +357,7 @@ class IslandView(context: Context) : View(context) {
         morphAnim?.cancel()
         sweepAnim?.cancel()
         appearAnim?.cancel()
+        fitAnim?.cancel()
     }
 
     // ---------------------------------------------------------------- touch
@@ -347,10 +411,14 @@ class IslandView(context: Context) : View(context) {
         val u = g.card.width() / REF_W
         val pillH = g.pill.height()
 
-        // the body: pill -> card
+        // the body: pill -> card. The pill is the size the status bar leaves room for (a part of its frame)
+        pillNow.set(
+            g.cutout.left - lerp(layFrom.leftEar, layTo.leftEar, fitT), g.pill.top,
+            g.cutout.right + lerp(layFrom.rightEar, layTo.rightEar, fitT), g.pill.bottom
+        )
         rect.set(
-            lerp(g.pill.left, g.card.left, e), lerp(g.pill.top, g.card.top, e),
-            lerp(g.pill.right, g.card.right, e), lerp(g.pill.bottom, g.card.bottom, e)
+            lerp(pillNow.left, g.card.left, e), lerp(pillNow.top, g.card.top, e),
+            lerp(pillNow.right, g.card.right, e), lerp(pillNow.bottom, g.card.bottom, e)
         )
         if (appear != 1f && ec < 0.01f) {
             // pop-in: the pill grows out of its own centre
@@ -386,7 +454,9 @@ class IslandView(context: Context) : View(context) {
         canvas.restore()
 
         // keep animating while the card is open (the glow breathes); the pill is redrawn by the controller every second
-        if (morph > 0.001f || morphAnim?.isRunning == true || sweepAnim?.isRunning == true || appearAnim?.isRunning == true) {
+        if (morph > 0.001f || morphAnim?.isRunning == true || sweepAnim?.isRunning == true || appearAnim?.isRunning == true ||
+            fitAnim?.isRunning == true
+        ) {
             postInvalidateOnAnimation()
         }
     }
@@ -557,30 +627,12 @@ class IslandView(context: Context) : View(context) {
 
     // ---------------------------------------------------------------- the pill
     private fun drawCompact(c: Canvas, g: Geo, m: Model, now: Long, alpha: Float) {
-        val p = g.pill
         val d = g.density
         val accent = IslandStyle.accent(m.colorKey)
         val a255 = (alpha * 255f).toInt()
-        val ringD = min(p.height() - 12f * d, 24f * d)
-        val leftPod = g.cutout.left - p.left
-        val rightPod = p.right - g.cutout.right
-        val textW = 54f * d
-        val ringCx: Float
-        val textCx: Float
-        val textRoom: Float
-        if (leftPod >= ringD + 14f * d && rightPod >= textW) {
-            ringCx = p.left + leftPod / 2f
-            textCx = g.cutout.right + rightPod / 2f
-            textRoom = rightPod - 12f * d
-        } else if (rightPod >= ringD + textW + 14f * d) {
-            ringCx = g.cutout.right + 8f * d + ringD / 2f
-            textCx = ringCx + ringD / 2f + 6f * d + textW / 2f
-            textRoom = p.right - (ringCx + ringD / 2f + 6f * d) - 8f * d
-        } else {
-            ringCx = g.cutout.left - 8f * d - ringD / 2f
-            textCx = ringCx - ringD / 2f - 6f * d - textW / 2f
-            textRoom = ringCx - ringD / 2f - 6f * d - p.left - 8f * d
-        }
+        val ringD = IslandFit.ringD(g.pill.height(), d)
+        // the ring and the time sit where the size of the moment puts them (and slide there when the size changes)
+        val ringCx = lerp(layFrom.ringX, layTo.ringX, fitT)
         val cy = g.cy
 
         // ring: what is left of the session
@@ -609,16 +661,32 @@ class IslandView(context: Context) : View(context) {
             lastSecond = second
             countdownText = if (m.done) "Done" else IslandRing.countdown(m.endsAt - now)
         }
+        val t = fitT
+        if (abs(layFrom.timeX - layTo.timeX) <= 1f) {
+            // the same place in both sizes: it only gets more or less visible
+            drawTime(c, alpha * lerp(layFrom.timeA, layTo.timeA, t), layTo.timeX, layTo.timeRoom, cy, d, accent)
+        } else {
+            // two places (right of the camera, left of it): the time fades out of one and into the other
+            val out = layFrom.timeA * (1f - smooth(0f, 0.5f, t))
+            if (out > 0.01f) drawTime(c, alpha * out, layFrom.timeX, layFrom.timeRoom, cy, d, accent)
+            val into = layTo.timeA * smooth(0.5f, 1f, t)
+            if (into > 0.01f) drawTime(c, alpha * into, layTo.timeX, layTo.timeRoom, cy, d, accent)
+        }
+    }
+
+    /** The countdown, centred on [cx], made smaller if it would be wider than [room]. */
+    private fun drawTime(c: Canvas, alpha: Float, cx: Float, room: Float, cy: Float, d: Float, accent: Int) {
+        if (alpha <= 0.01f) return
         pillTimePaint.textSize = 13.5f * d
         pillTimePaint.color = IslandStyle.withAlpha(IslandStyle.lighten(accent, 0.2f), alpha)
         var tw = pillTimePaint.measureText(countdownText)
-        if (textRoom > 20f * d && tw > textRoom) {
-            // "1:29:46" is wider than "29:46": make it fit inside its half of the pill
-            pillTimePaint.textSize = 13.5f * d * textRoom / tw
+        if (room > 20f * d && tw > room) {
+            // "1:29:46" is wider than "29:46": make it fit inside its place
+            pillTimePaint.textSize = 13.5f * d * room / tw
             tw = pillTimePaint.measureText(countdownText)
         }
         val fm = pillTimePaint.fontMetrics
-        c.drawText(countdownText, textCx - tw / 2f, cy - (fm.ascent + fm.descent) / 2f, pillTimePaint)
+        c.drawText(countdownText, cx - tw / 2f, cy - (fm.ascent + fm.descent) / 2f, pillTimePaint)
     }
 
     // ---------------------------------------------------------------- geometry of the rounded arcs

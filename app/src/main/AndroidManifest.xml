@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <!-- The island around the camera is drawn in a window over other apps (the user grants this in the system settings). -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Only to know whether Wi-Fi or a VPN is connected: those are icons in the status bar, and the island keeps clear of them. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <queries>
         <intent>

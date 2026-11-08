@@ -46,6 +46,7 @@ import com.shdurazi.todo.core.Codec
 import com.shdurazi.todo.core.Fmt
 import com.shdurazi.todo.core.Queries
 import com.shdurazi.todo.island.IslandController
+import com.shdurazi.todo.island.IslandFit
 import com.shdurazi.todo.island.IslandPrefs
 import com.shdurazi.todo.notify.Notifier
 import com.shdurazi.todo.notify.ReminderEngine
@@ -143,6 +144,7 @@ fun SettingsScreen(ui: UiState, data: AppData, h24: Boolean, onBack: () -> Unit)
         }
     }
     var islandOn by remember { mutableStateOf(IslandPrefs.enabled(ctx)) }
+    var fitChoice by remember { mutableStateOf(IslandPrefs.fitSaved(ctx)) }
     val overlayOk = remember(refresh) { IslandController.canOverlay(ctx) }
     val a11yOn = remember(refresh) { IslandController.accessibilityOn() }
     val a11yDeclared = remember { IslandController.accessibilityDeclared(ctx) } // debug builds only
@@ -355,6 +357,37 @@ fun SettingsScreen(ui: UiState, data: AppData, h24: Boolean, onBack: () -> Unit)
                     }) +
                     "With the island on, the Live Update chip is not used." +
                     (if (islandFailed) " The island stopped after an error: switch it off and on again to retry." else ""),
+                size = 13.sp,
+                color = Ink.TextDim,
+                maxLines = 12,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp)
+            )
+
+            SectionLabel("Island size")
+            ChipRow {
+                val sizes = listOf(
+                    "Auto" to IslandFit.AUTO,
+                    "Wide" to IslandFit.CHOICE_WIDE,
+                    "Left" to IslandFit.CHOICE_LEFT,
+                    "Small" to IslandFit.CHOICE_RING
+                )
+                for ((label, choice) in sizes) {
+                    ChoiceChip(label, fitChoice == choice, accent) {
+                        fitChoice = choice
+                        IslandPrefs.setFit(ctx, choice)
+                        IslandController.fitChanged(ctx)
+                        refresh += 1
+                        if (overlayOk || a11yOn) IslandController.preview(ctx)
+                    }
+                }
+            }
+            val autoNow = remember(refresh, fitChoice) { if (fitChoice == IslandFit.AUTO) IslandFit.describe(ctx) else "" }
+            Txt(
+                text = "The status bar paints its icons over the island, and ToDo can't see them. Auto goes by what the phone " +
+                    "reports (an alarm, headphones, Wi-Fi, VPN, Do Not Disturb or silent mode) and pulls the island in when " +
+                    "icons sit beside the camera. Wide is the Anchor look, Left puts the ring and the time left of the camera, " +
+                    "Small keeps only the ring. If Auto guesses wrong, pick the size yourself. $autoNow",
                 size = 13.sp,
                 color = Ink.TextDim,
                 maxLines = 12,

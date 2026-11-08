@@ -149,6 +149,60 @@ home_and_look() { # home_and_look <file name> <label>: Home, then two screenshot
   sleep 5.5
 }
 
+size_moves() { # what the film of the island's sizes does: ring -> wide -> left (the controller looks every 5 seconds)
+  sleep 0.5
+  adb shell settings put global todo_island_fit wide
+  sleep 6.5
+  adb shell settings put global todo_island_fit left
+  sleep 4
+}
+
+island_sizes() { # island_sizes <t> <film: yes|no>: the island in its other sizes (the main test runs the wide one) and the way between them
+  local t=$1 withfilm=$2 s
+  stage "4d. the island's sizes: left (ring and time left of the camera) and ring (the ring alone), then the card opening out of them"
+  for s in left ring; do
+    adb shell settings put global todo_island_fit "$s"
+    fresh_session
+    sleep 3
+    adb logcat -c
+    home_and_look "$t-size-$s" "$t-island-size-$s"
+    adb exec-out screencap -p > "$OUT/$t-size-$s-closed.png"
+    top_shot "$OUT/$t-size-$s-closed.png" "$t-island-size-$s-closed"
+    adb logcat -d -s ToDoIsland:I | grep -E "attach host" | cut -c1-300 | tail -1
+  done
+
+  stage "4e. Auto: the size follows the icons the phone reports (the test pretends 0, then 2, then 0 again)"
+  adb shell settings put global todo_island_fit auto
+  adb shell settings put global todo_island_icons 0
+  fresh_session
+  sleep 3
+  adb logcat -c
+  adb shell input keyevent 3
+  sleep 9
+  echo "auto, no icons: $(adb logcat -d -s ToDoIsland:I | grep -E 'attach host|geometry changed' | grep -o 'size=[a-z]* ([^)]*)' | tail -1)"
+  adb exec-out screencap -p > "$OUT/$t-size-auto0.png"
+  top_shot "$OUT/$t-size-auto0.png" "$t-island-size-auto-0-icons"
+  adb shell settings put global todo_island_icons 2
+  sleep 7
+  echo "auto, 2 icons: $(adb logcat -d -s ToDoIsland:I | grep -E 'attach host|geometry changed' | grep -o 'size=[a-z]* ([^)]*)' | tail -1)"
+  adb exec-out screencap -p > "$OUT/$t-size-auto2.png"
+  top_shot "$OUT/$t-size-auto2.png" "$t-island-size-auto-2-icons"
+  adb shell settings put global todo_island_icons 0
+  sleep 16
+  echo "auto, no icons again (wider after a wait): $(adb logcat -d -s ToDoIsland:I | grep -E 'attach host|geometry changed' | grep -o 'size=[a-z]* ([^)]*)' | tail -1)"
+  echo "--- size log"
+  adb logcat -d -v time -s ToDoIsland:I | grep -E "attach host|geometry changed" | cut -c1-300 | tail -6
+
+  if [ "$withfilm" = yes ]; then
+    stage "4f. slow motion ($SLOW times) of the island changing size: ring, wide, left"
+    adb shell settings put global todo_island_fit ring
+    sleep 6
+    adb shell settings put global animator_duration_scale "$SLOW"
+    film "$t-size-move" "$t-island-size-move" 14 size_moves
+    adb shell settings put global animator_duration_scale 1
+  fi
+}
+
 island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <motion: yes|no> <part: overlay|a11y>
   local v=$1 cfg=$2 full=$3 motion=$4 part=$5 t="$1-$2" PX PY PB CX CY DENS
   echo "::group::[$v] island ($part window), cutout '$cfg' (API $API)"
@@ -158,6 +212,9 @@ island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <motion: 
   adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS > /dev/null 2>&1 || true
   # the emulator action switches all animations off; the island's own animations need to run
   adb shell settings put global animator_duration_scale 1
+  # the island follows the icons of the status bar; the emulator has a Wi-Fi icon, so the main flow asks for the wide one
+  adb shell settings put global todo_island_fit wide
+  adb shell settings delete global todo_island_icons > /dev/null 2>&1
   cutout_set "$cfg"
   adb shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow
   echo "overlay permission: $(adb shell appops get "$PKG" SYSTEM_ALERT_WINDOW | tr -d '\r')"
@@ -208,6 +265,7 @@ island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <motion: 
       stage "4c. slow motion ($SLOW times), plain overlay window"
       island_slowmo "$t" ov-slow
     fi
+    if [ "$v" = debug ]; then island_sizes "$t" "$motion"; fi
   else
     stage "5. the accessibility window (above the status bar, on the lock screen)"
     adb shell settings put secure enabled_accessibility_services "$PKG/com.shdurazi.todo.island.IslandAccessibilityService"
@@ -266,6 +324,8 @@ island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <motion: 
   adb shell settings put secure enabled_accessibility_services "" > /dev/null 2>&1
   adb shell settings put secure accessibility_enabled 0 > /dev/null 2>&1
   adb shell appops set "$PKG" SYSTEM_ALERT_WINDOW default > /dev/null 2>&1
+  adb shell settings delete global todo_island_fit > /dev/null 2>&1
+  adb shell settings delete global todo_island_icons > /dev/null 2>&1
   adb shell settings put global animator_duration_scale 0
   adb shell am force-stop "$PKG"
   adb logcat -d > "$OUT/logcat-island-$t-$part.txt"
