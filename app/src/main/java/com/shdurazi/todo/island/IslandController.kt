@@ -117,11 +117,12 @@ object IslandController {
         val a = context.applicationContext
         main.post {
             app = a
-            previewUntil = System.currentTimeMillis() + PREVIEW_MS
+            val span = (PREVIEW_MS * holdFactor(a)).toLong()
+            previewUntil = System.currentTimeMillis() + span
             Log.i(TAG, "preview requested")
             evaluate("preview")
             main.removeCallbacks(reevaluate)
-            main.postDelayed(reevaluate, PREVIEW_MS + 150L)
+            main.postDelayed(reevaluate, span + 150L)
         }
     }
 
@@ -291,6 +292,9 @@ object IslandController {
                 openCard(DONE_HOLD_MS)
             } else if (introPending && visibleNow(ctx)) {
                 startIntro(ctx, kind, key, true)
+            } else if (visibleNow(ctx)) {
+                // back again after a trip into the app: the pill pops in, the card stays closed
+                view?.popIn()
             } else {
                 view?.setAppearInstant()
             }
@@ -356,6 +360,12 @@ object IslandController {
         main.removeCallbacks(introOpen)
         main.postDelayed(introOpen, if (popIn) (INTRO_DELAY_MS * animationScale(ctx)).toLong() else 0L)
     }
+
+    /**
+     * How much longer than usual the card stays open when the phone's animations are slowed down, so that a slow opening is
+     * not cut short by the timer. At most double: the card is a glance, not a screen.
+     */
+    private fun holdFactor(ctx: Context?): Float = if (ctx == null) 1f else min(animationScale(ctx), 2f)
 
     /** The phone's animation speed setting (1 = normal, 2 = twice as slow...), never below 1 so that the intro still waits a moment. */
     private fun animationScale(ctx: Context): Float = try {
@@ -549,7 +559,7 @@ object IslandController {
             c.expand()
         }
         Log.i(TAG, "open")
-        if (hold > 0L) main.postDelayed(closeCard, hold)
+        if (hold > 0L) main.postDelayed(closeCard, (hold * holdFactor(app)).toLong())
     }
 
     /**

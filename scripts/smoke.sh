@@ -7,6 +7,62 @@ PKG=com.shdurazi.todo
 OUT=smoke-out
 mkdir -p "$OUT"
 
+# Every adb call gets a time limit: when the emulator dies, a hung call must not hold the whole job until the 45 minute limit.
+ADB_BIN=$(command -v adb)
+adb() { timeout "${ADB_TIMEOUT:-90}" "$ADB_BIN" "$@"; }
+
+# A line every 5 seconds about the host (load, free memory, is the emulator process still there) in smoke-out/vitals.log,
+# so that a vanished emulator can be placed in time and blamed on something.
+vitals_loop() {
+  while true; do
+    echo "$(date +%T) load=$(cut -d' ' -f1-3 /proc/loadavg) free_mb=$(awk '/MemAvailable/{printf "%d", $2/1024}' /proc/meminfo)" \
+      "emulator_procs=$(pgrep -fc 'qemu-system|emulator.*-avd' 2>/dev/null)"
+    sleep 5
+  done
+}
+vitals_loop >> "$OUT/vitals.log" 2>&1 &
+VITALS_PID=$!
+trap 'kill "$VITALS_PID" 2> /dev/null' EXIT
+
+alive() { [ "$(timeout 25 "$ADB_BIN" shell echo up 2> /dev/null | tr -d '\r')" = up ]; }
+
+lost_report() { # what is known about a vanished emulator
+  echo "--- host vitals, the last 24 samples"
+  tail -24 "$OUT/vitals.log"
+  echo "--- host memory and disk"
+  free -m | head -3
+  df -h / /tmp 2> /dev/null | head -4
+  echo "--- emulator processes"
+  ps -eo pid,stat,etime,pcpu,rss,args --sort=-rss | grep -a -E "qemu|emulator" | grep -a -v grep | cut -c1-200 | head -5
+  echo "--- kernel messages about killed or crashed processes"
+  sudo -n dmesg 2> /dev/null | grep -a -i -E "oom|killed process|segfault|qemu|emulator|kvm" | tail -15
+  echo "--- crash dumps of the emulator"
+  ls -la /tmp/android-runner 2> /dev/null | head -8
+  echo "--- adb"
+  timeout 20 "$ADB_BIN" devices -l 2>&1 | head -4
+  echo "--- adb restart"
+  timeout 20 "$ADB_BIN" kill-server > /dev/null 2>&1
+  sleep 2
+  timeout 20 "$ADB_BIN" start-server > /dev/null 2>&1
+  timeout 60 "$ADB_BIN" wait-for-device 2>&1 | head -2
+  timeout 20 "$ADB_BIN" devices -l 2>&1 | head -4
+}
+
+guard() { # guard <where>: stops the run, with a diagnosis, when the emulator has stopped answering
+  alive && return 0
+  echo "EMULATOR NOT ANSWERING before: $1"
+  lost_report
+  alive && { echo "(the emulator answers again, carrying on)"; return 0; }
+  echo "RESULT: the emulator is gone, the run stops here"
+  exit 1
+}
+
+stage() { # stage <heading>: a heading with the load of the host and of the emulator
+  guard "$1"
+  echo "--- $1  [host load $(cut -d' ' -f1 /proc/loadavg), $(awk '/MemAvailable/{printf "%d", $2/1024}' /proc/meminfo) MB free;" \
+    "emulator $(adb shell cat /proc/meminfo 2> /dev/null | awk '/MemAvailable/{printf "%d", $2/1024}') MB free]"
+}
+
 echo "waiting for the system services to be ready ..."
 for i in $(seq 1 120); do
   if adb shell pm path android 2>/dev/null | grep -q "package:"; then echo "ready after $i checks"; break; fi
@@ -57,8 +113,10 @@ top_shot() { # top_shot <png> <name>: the top of a screenshot (where the island 
 }
 
 sheet() { # sheet <mp4> <jpg> <start s> <length s> <fps> <label>: a contact sheet (4 x 4 frames) of the top of the screen
-  ffmpeg -loglevel error -y -ss "$3" -t "$4" -i "$1" -vf "fps=$5,crop=iw:min(ih\,560):0:0,scale=448:-2,tile=4x4" \
-    -frames:v 1 -q:v 4 "$2" || return
+  # the film is 720 x 1600: its top 7/30 (a 1080 x 2400 screen's top 560 px) is where the island is
+  nice -n 10 ffmpeg -loglevel error -threads 2 -y -ss "$3" -t "$4" -i "$1" \
+    -vf "fps=$5,crop=iw:trunc(ih*7/60)*2:0:0,scale=448:-2,tile=4x4" -frames:v 1 -q:v 4 "$2" || return
+  [ -s "$2" ] || return
   echo "SHOT-BEGIN $6"; base64 -w0 "$2"; echo; echo "SHOT-END $6"
 }
 
@@ -67,7 +125,8 @@ film() { # film <name> <label> <seconds> <command...>: records the screen around
   shift 3
   if ! command -v ffmpeg > /dev/null; then "$@"; sleep $((secs - 1)); return; fi
   adb shell rm -f /sdcard/film.mp4 > /dev/null 2>&1
-  adb shell screenrecord --time-limit "$secs" /sdcard/film.mp4 > /dev/null 2>&1 &
+  # a small picture and a modest bit rate: the emulator encodes in software
+  adb shell screenrecord --size 720x1600 --bit-rate 6000000 --time-limit "$secs" /sdcard/film.mp4 > /dev/null 2>&1 &
   rp=$!
   sleep 1.5
   "$@"
@@ -97,15 +156,12 @@ cutout_set() { # cutout_set <name|none>: shows one of the emulator's camera cuto
   echo "cutout '$1': $(adb shell dumpsys display | grep -a -m1 -o 'DisplayCutout{.*' | cut -c1-420)"
 }
 
-island_preview() { # island_preview <test name>: taps "Preview" in Settings > Island and films what happens
+island_preview() { # island_preview <test name>: taps "Preview" in Settings > Island and looks at the island over the app itself
   local t=$1 XY="" i
-  adb shell input keyevent 4
-  sleep 1.5
-  dump
-  if [ -z "$(python3 scripts/ui_find.py "Settings" < "$OUT/ui.xml")" ]; then
-    adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
-    sleep 2
-  fi
+  # start the app afresh: it opens on its home screen, whatever the earlier steps left on the screen (the keyboard, the focus screen)
+  adb shell am force-stop "$PKG"
+  adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
+  sleep 3
   tap_text "Settings"
   for i in 1 2 3 4 5 6 7 8; do
     dump
@@ -115,31 +171,64 @@ island_preview() { # island_preview <test name>: taps "Preview" in Settings > Is
     sleep 0.8
   done
   if [ -z "$XY" ]; then
-    echo "no Preview row found in Settings"
+    echo "no Preview row found in Settings; the screen shows:"
+    python3 scripts/ui_dump.py < "$OUT/ui.xml" | head -30
     shot "$t-settings-no-preview"
     return
   fi
   echo "tap Preview at $XY"
   shot "$t-settings-island"
-  film "$t-preview" "$t-island-preview" 12 adb shell input tap $XY
+  adb shell input tap $XY
+  sleep 2.4
+  adb exec-out screencap -p > "$OUT/$t-preview-a.png"
+  top_shot "$OUT/$t-preview-a.png" "$t-island-preview-a"
+  sleep 1.6
+  adb exec-out screencap -p > "$OUT/$t-preview-b.png"
+  top_shot "$OUT/$t-preview-b.png" "$t-island-preview-b"
+  sleep 8
+  adb exec-out screencap -p > "$OUT/$t-preview-c.png"
+  top_shot "$OUT/$t-preview-c.png" "$t-island-preview-c-after-the-end"
   adb shell input keyevent 4
   sleep 1
 }
 
-island_slowmo() { # island_slowmo <test name> <label>: the intro again with all animations 6 times slower
+SLOW=5 # how much slower the slow-motion films run every animation
+
+# The island introduces itself once per focus session, so every look at the intro needs a new session: start one on the
+# other one of two blocks (starting the block that is already running changes nothing).
+SESSION_BLOCK=b-wrap
+fresh_session() {
+  if [ "$SESSION_BLOCK" = b-deep ]; then SESSION_BLOCK=b-wrap; else SESSION_BLOCK=b-deep; fi
+  echo "new focus session on $SESSION_BLOCK"
+  adb shell am start -n "$PKG/.MainActivity" -a com.shdurazi.todo.action.START_FOCUS --es block_id "$SESSION_BLOCK" > /dev/null 2>&1
+}
+
+island_slowmo() { # island_slowmo <test name> <label>: a new session, and its intro with every animation $SLOW times slower
   local t=$1 name=$2
-  adb shell settings put global animator_duration_scale 6
-  adb shell am start -n "$PKG/.MainActivity" -a com.shdurazi.todo.action.START_FOCUS --es block_id b-deep > /dev/null 2>&1
+  adb shell settings put global animator_duration_scale "$SLOW"
+  fresh_session
   sleep 3
-  film "$t-$name" "$t-island-slow-$name" 18 adb shell input keyevent 3
+  film "$t-$name" "$t-island-slow-$name" 20 adb shell input keyevent 3
   adb shell settings put global animator_duration_scale 1
   adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
   sleep 2
 }
 
-island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <slow motion: yes|no>
-  local v=$1 cfg=$2 full=$3 slow=$4 t="$1-$2" PX PY PB CX CY DENS
+home_and_look() { # home_and_look <file name> <label>: Home, then two screenshots of the top of the screen while the island opens
+  adb shell input keyevent 3
+  sleep 2.2
+  adb exec-out screencap -p > "$OUT/$1-a.png"
+  top_shot "$OUT/$1-a.png" "$2-a"
+  sleep 1.2
+  adb exec-out screencap -p > "$OUT/$1-b.png"
+  top_shot "$OUT/$1-b.png" "$2-b"
+  sleep 5.5
+}
+
+island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <motion: yes|no>
+  local v=$1 cfg=$2 full=$3 motion=$4 t="$1-$2" PX PY PB CX CY DENS
   echo "::group::[$v] island, cutout '$cfg' (API $API)"
+  guard "island test $t"
   # the emulator action switches all animations off; the island's own animations need to run
   adb shell settings put global animator_duration_scale 1
   cutout_set "$cfg"
@@ -148,20 +237,19 @@ island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <slow mot
   adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
   sleep 2
   adb logcat -c
-  echo "--- 1. a session started inside the app: the island must stay away while the app is in front"
-  adb shell am start -n "$PKG/.MainActivity" -a com.shdurazi.todo.action.START_FOCUS --es block_id b-deep > /dev/null 2>&1
+  stage "1. a session started inside the app: the island must stay away while the app is in front"
+  fresh_session
   sleep 3
   adb exec-out screencap -p > "$OUT/$t-island-app.png"
   top_shot "$OUT/$t-island-app.png" "$t-island-1-app-in-front"
-  if [ "$slow" = yes ]; then
-    echo "--- 1b. the Preview row in Settings: the island over the app itself"
+  if [ "$motion" = yes ]; then
+    stage "1b. the Preview row in Settings: the island over the app itself"
     island_preview "$t"
+    adb shell am start -n "$PKG/.MainActivity" > /dev/null 2>&1
+    sleep 2
   fi
-  echo "--- 2. Home: the island should pop in, open, turn the dial and close again (plain overlay window)"
-  adb shell dumpsys gfxinfo "$PKG" reset > /dev/null 2>&1
-  film "$t-ov" "$t-island-2-overlay" 12 adb shell input keyevent 3
-  echo "--- frame statistics of the island windows (software rendering: only good for comparing)"
-  adb shell dumpsys gfxinfo "$PKG" | grep -a -E "Total frames rendered|Janky frames|50th|90th|95th|99th" | head -6
+  stage "2. Home: the island should pop in, open, turn the dial and close again (plain overlay window)"
+  home_and_look "$t-ov" "$t-island-2-overlay"
   adb exec-out screencap -p > "$OUT/$t-ov-closed.png"
   top_shot "$OUT/$t-ov-closed.png" "$t-island-3-overlay-closed"
   echo "--- ToDoIsland log (overlay)"
@@ -169,7 +257,7 @@ island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <slow mot
   read -r PX PY PB CX CY DENS <<< "$(island_geometry)"
   echo "geometry: pill centre $PX,$PY bottom $PB card tap point $CX,$CY density $DENS"
   if [ -n "$PX" ]; then
-    echo "--- 3. taps on the closed pill: its middle (under the status bar) and the strip below the bar"
+    stage "3. taps on the closed pill: its middle (under the status bar) and the strip below the bar"
     adb logcat -c
     adb shell input tap "$PX" "$PY"
     sleep 1
@@ -179,27 +267,27 @@ island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <slow mot
     echo "taps on the pill after the strip tap: $(adb logcat -d -s ToDoIsland:I | grep -c 'tap on the pill')"
     adb exec-out screencap -p > "$OUT/$t-ov-tap.png"
     top_shot "$OUT/$t-ov-tap.png" "$t-island-4-overlay-after-tap"
-    echo "--- 4. tap on the open card: the app should come to the front"
+    stage "4. tap on the open card: the app should come to the front"
     adb shell input tap "$CX" "$CY"
     sleep 2.5
     echo "resumed: $(adb shell dumpsys activity activities | grep -m1 -E 'topResumedActivity|mResumedActivity' | cut -c1-200)"
     adb logcat -d -s ToDoIsland:I | grep -E "tap on the card|fade out|detached" | tail -4
   fi
 
-  if [ "$slow" = yes ]; then
-    echo "--- 4b. slow motion, plain overlay window"
+  if [ "$motion" = yes ]; then
+    stage "4b. slow motion ($SLOW times), plain overlay window"
     island_slowmo "$t" ov-slow
   fi
 
-  echo "--- 5. the accessibility window (above the status bar, on the lock screen)"
+  stage "5. the accessibility window (above the status bar, on the lock screen)"
   adb shell settings put secure enabled_accessibility_services "$PKG/com.shdurazi.todo.island.IslandAccessibilityService"
   adb shell settings put secure accessibility_enabled 1
   sleep 4
   adb logcat -d -s ToDoIsland:I | grep -i "accessibility" | tail -3
-  adb shell am start -n "$PKG/.MainActivity" -a com.shdurazi.todo.action.START_FOCUS --es block_id b-wrap > /dev/null 2>&1
+  fresh_session
   sleep 3
   adb logcat -c
-  film "$t-a11y" "$t-island-5-a11y" 12 adb shell input keyevent 3
+  home_and_look "$t-a11y" "$t-island-5-a11y"
   adb exec-out screencap -p > "$OUT/$t-a11y-closed.png"
   top_shot "$OUT/$t-a11y-closed.png" "$t-island-6-a11y-closed"
   echo "--- ToDoIsland log (accessibility)"
@@ -218,13 +306,13 @@ island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <slow mot
     adb logcat -d -s ToDoIsland:I | grep -E "tap on the card|fade out|detached" | tail -4
   fi
 
-  if [ "$slow" = yes ]; then
-    echo "--- 5b. slow motion, accessibility window"
+  if [ "$motion" = yes ]; then
+    stage "5b. slow motion ($SLOW times), accessibility window"
     island_slowmo "$t" a11y-slow
   fi
 
   if [ "$full" = yes ]; then
-    echo "--- 6. lock screen (with a PIN, so that the keyguard is a real one)"
+    stage "6. lock screen (with a PIN, so that the keyguard is a real one)"
     adb shell input keyevent 3
     sleep 4
     adb shell locksettings set-pin 1234 2>&1 | head -2
@@ -256,6 +344,7 @@ island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <slow mot
 
 for variant in debug release; do
   APK="dist/ToDo-$variant.apk"
+  guard "the $variant build"
   echo "::group::[$variant] install and start (API $API)"
   adb uninstall "$PKG" > /dev/null 2>&1 || true
   adb install -r "$APK" || { echo "RESULT[$variant]: install failed"; echo "::endgroup::"; continue; }
@@ -378,16 +467,23 @@ for variant in debug release; do
     if [ -n "$PID3" ]; then echo "RESULT[$variant]: still running after the focus session"; else echo "RESULT[$variant]: DIED during the focus session"; fi
     echo "::endgroup::"
 
-    island_test "$variant" hole yes no
-    island_test "$variant" emu01 no yes
+    guard "the island tests of the $variant build"
     if [ "$variant" = debug ]; then
+      # a camera hole like a real phone's: the motion (slow-motion films, the Preview row) is looked at here, first
+      island_test "$variant" emu01 no yes
+      # an imaginary hole at the top centre, and the lock screen
+      island_test "$variant" hole yes no
       island_test "$variant" tall no no
+    else
+      island_test "$variant" emu01 no no
+      island_test "$variant" hole yes no
     fi
     cutout_set none
 
+    guard "the monkey test of the $variant build"
     echo "::group::[$variant] monkey test (API $API)"
     adb logcat -c
-    adb shell monkey -p "$PKG" -s 7 --throttle 150 --pct-syskeys 0 --pct-appswitch 0 --pct-nav 0 --pct-majornav 0 -v 300 > "$OUT/monkey-$variant.txt" 2>&1 || true
+    ADB_TIMEOUT=400 adb shell monkey -p "$PKG" -s 7 --throttle 150 --pct-syskeys 0 --pct-appswitch 0 --pct-nav 0 --pct-majornav 0 -v 300 > "$OUT/monkey-$variant.txt" 2>&1 || true
     tail -8 "$OUT/monkey-$variant.txt"
     adb logcat -d > "$OUT/logcat-monkey-$variant.txt"
     crash_report "$OUT/logcat-monkey-$variant.txt"
