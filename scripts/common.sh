@@ -52,8 +52,12 @@ lost_report() { # what is known about a vanished emulator
   fi
   echo "--- the emulator console"
   timeout 15 "$ADB_BIN" emu avd status 2>&1 | head -3
+  echo "--- how the emulator launcher ended"
+  cat /tmp/emulator-exit.log 2> /dev/null || echo "(no /tmp/emulator-exit.log)"
   echo "--- kernel messages of the host about killed or crashed processes"
   sudo -n dmesg 2> /dev/null | grep -a -i -E "oom|killed process|segfault|qemu|emulator" | tail -10
+  echo "--- the host kernel's last 12 lines, whatever they are"
+  sudo -n dmesg 2>&1 | tail -12 | cut -c1-200
   echo "--- the emulator's own output: its errors, then the last 40 lines"
   if [ -f /tmp/emulator.log ]; then
     grep -a -i -E "error|fatal|panic|abort|assert|crash|killed|segfault|\bhang|\bhung|watchdog|soft lockup|rcu.*stall|\bOops\b|BUG:" /tmp/emulator.log \
