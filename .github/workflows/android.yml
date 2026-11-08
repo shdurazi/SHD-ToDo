@@ -5,9 +5,15 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      only_probe:
+        description: "Run only the emulator probe (no smoke test)"
+        type: boolean
+        default: false
 
 concurrency:
-  group: build-${{ github.ref }}
+  # a run started by hand does not cancel the run of a push, nor the other way round
+  group: build-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -115,6 +121,7 @@ jobs:
   # so a crash on launch shows up here instead of only on a phone.
   smoke:
     needs: build
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.only_probe) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -199,21 +206,6 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Record how the emulator process ends (exit status, or 128 + the signal that killed it)
-        run: |
-          EMU="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/emulator/emulator"
-          ls -la "$EMU" "$(dirname "$EMU")" | head -12
-          sudo mv "$EMU" "$EMU.real"
-          printf '%s\n' '#!/bin/bash' \
-            'D="$(cd "$(dirname "$0")" && pwd)"' \
-            'echo "emulator launcher started at $(date +%T): $*" >> /tmp/emulator-exit.log' \
-            '"$D/emulator.real" "$@"' \
-            'S=$?' \
-            'echo "emulator launcher ended with status $S at $(date +%T)" >> /tmp/emulator-exit.log' \
-            'exit $S' | sudo tee "$EMU" > /dev/null
-          sudo chmod +x "$EMU"
-          "$EMU" -version | head -3
-
       - name: Run the scenario on an emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -226,6 +218,7 @@ jobs:
           ram-size: 4096M
           cores: 4
           emulator-options: "-no-window -gpu ${{ matrix.gpu }} -no-snapshot -noaudio -no-boot-anim -show-kernel -verbose > /tmp/emulator.log 2>&1"
+          pre-emulator-launch-script: bash scripts/wrap_emulator.sh
           script: bash scripts/probe.sh ${{ matrix.api }} ${{ matrix.scenario }} ${{ matrix.gpu }}
 
       - name: Keep the logs
