@@ -175,15 +175,16 @@ jobs:
       matrix:
         include:
           - { api: 34, scenario: a11y-anim-taps, gpu: swiftshader_indirect, rep: 1 }
-          - { api: 34, scenario: a11y-anim-taps, gpu: swiftshader_indirect, rep: 2 }
-          - { api: 34, scenario: a11y-anim-taps, gpu: swiftshader_indirect, rep: 3 }
+          - { api: 34, scenario: a11y-anim-taps-settled, gpu: swiftshader_indirect, rep: 1 }
+          - { api: 34, scenario: a11y-anim-taps-notb, gpu: swiftshader_indirect, rep: 1 }
           - { api: 34, scenario: a11y-anim-taps, gpu: guest, rep: 1 }
-          - { api: 34, scenario: a11y-anim-taps, gpu: guest, rep: 2 }
           - { api: 34, scenario: a11y-anim-taps, gpu: swangle_indirect, rep: 1 }
-          - { api: 34, scenario: a11y-anim-taps, gpu: swangle_indirect, rep: 2 }
+          - { api: 34, scenario: overlay-anim-taps, gpu: swiftshader_indirect, rep: 1 }
           - { api: 36, scenario: a11y-anim-taps, gpu: swiftshader_indirect, rep: 1 }
+          - { api: 36, scenario: a11y-anim-taps-notb, gpu: swiftshader_indirect, rep: 1 }
           - { api: 36, scenario: a11y-anim-taps, gpu: guest, rep: 1 }
           - { api: 36, scenario: a11y-anim-taps, gpu: swangle_indirect, rep: 1 }
+          - { api: 36, scenario: overlay-anim-taps, gpu: swiftshader_indirect, rep: 1 }
     steps:
       - uses: actions/checkout@v4
 

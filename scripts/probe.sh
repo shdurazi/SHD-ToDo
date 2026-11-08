@@ -6,7 +6,8 @@
 #
 # The scenario name is a list of words: a11y | overlay | none (which island window, or no app at all), anim | noanim
 # (the phone's animation speed), idle (service on, but no focus session), taps, shots (a tap / a screenshot every 10 / 5 s),
-# settled (wait until the guest is quiet before starting).
+# settled (wait until the guest is quiet before starting), notb (the emulator image's TalkBack is switched off first).
+# The emulator is watched for four minutes ($WATCH_S): with a tap every 10 s that is about twenty openings of the card.
 API="${1:-?}"
 SCEN="${2:-a11y-anim}"
 GPU="${3:-swiftshader_indirect}" # only for the heading: the emulator was started with it by the workflow
@@ -15,17 +16,22 @@ OUT=smoke-out
 mkdir -p "$OUT"
 source scripts/common.sh
 
-MODE=a11y SCALE=1 SHOTS=0 TAPS=0 ISLAND=1 SETTLE=0
+MODE=a11y SCALE=1 SHOTS=0 TAPS=0 ISLAND=1 SETTLE=0 NOTB=0 WATCH_S=240
 case "$SCEN" in overlay*) MODE=overlay ;; none*) MODE=none ISLAND=0 ;; esac
 case "$SCEN" in *noanim*) SCALE=0 ;; esac
 case "$SCEN" in *idle*) ISLAND=0 ;; esac
 case "$SCEN" in *shots*) SHOTS=1 ;; esac
 case "$SCEN" in *taps*) TAPS=1 ;; esac
 case "$SCEN" in *settled*) SETTLE=1 ;; esac
-echo "PROBE $SCEN on API $API (gpu $GPU): window=$MODE animations=$SCALE screenshots=$SHOTS taps=$TAPS island=$ISLAND settle=$SETTLE"
+case "$SCEN" in *notb*) NOTB=1 ;; esac
+echo "PROBE $SCEN on API $API (gpu $GPU): window=$MODE animations=$SCALE screenshots=$SHOTS taps=$TAPS island=$ISLAND settle=$SETTLE notalkback=$NOTB"
 
 wait_boot
 if [ "$SETTLE" = 1 ]; then settle 150; fi
+echo "accessibility-related packages: $(adb shell pm list packages 2> /dev/null | grep -i -E 'accessib|talkback|marvin' | tr -d '\r' | tr '\n' ' ')"
+if [ "$NOTB" = 1 ]; then
+  adb shell pm disable-user --user 0 com.google.android.marvin.talkback 2>&1 | head -2
+fi
 if [ "$MODE" != none ]; then
   adb install -r dist/ToDo-debug.apk > /dev/null
   adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS > /dev/null 2>&1 || true
@@ -48,10 +54,11 @@ if [ "$MODE" != none ]; then
   sleep 3
 fi
 if [ "$ISLAND" = 1 ]; then adb shell input keyevent 3; fi
-echo "set up, watching for 2 minutes"
+echo "accessibility state: $(adb shell dumpsys accessibility 2> /dev/null | grep -a -i -E 'Enabled services|Bound services|Binding services' | tr -d '\r' | head -4 | tr '\n' ' ')"
+echo "set up, watching for $((WATCH_S / 60)) minutes"
 
 T0=$(date +%s)
-for i in $(seq 1 24); do
+for i in $(seq 1 $((WATCH_S / 5))); do
   sleep 5
   now=$(( $(date +%s) - T0 ))
   if alive; then
@@ -78,7 +85,9 @@ for i in $(seq 1 24); do
 done
 echo "ToDoIsland log of the run:"
 adb logcat -d -v time -s ToDoIsland:I | cut -c1-260 | tail -30
+echo "processes that died, and TalkBack, in the phone's log:"
+adb logcat -d -b all -v time 2> /dev/null | grep -a -E "am_proc_died|am_crash|am_anr|has died|WATCHDOG|marvin.talkback" | cut -c1-200 | tail -25
 echo "the guest's numbers at the end:"
 cat "$OUT/guest-last.txt" 2> /dev/null
-echo "PROBE RESULT $SCEN/$GPU/API$API: the emulator is still there after 2 minutes"
+echo "PROBE RESULT $SCEN/$GPU/API$API: the emulator is still there after $((WATCH_S / 60)) minutes"
 exit 0
