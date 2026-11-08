@@ -158,7 +158,11 @@ jobs:
           disk-size: 6000M
           ram-size: 4096M
           cores: 4
-          emulator-options: "-no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -show-kernel -verbose > /tmp/emulator.log 2>&1"
+          # The accessibility window's parts run on the emulator's "swangle_indirect" graphics (ANGLE on SwiftShader): with the
+          # older "swiftshader_indirect" the emulator froze within minutes in all of the 7 probe runs of that part (and with
+          # "guest" graphics too), while with swangle both API levels ran for four minutes with about twenty card openings.
+          # The overlay window and the base part never froze on "swiftshader_indirect", so they keep it.
+          emulator-options: "-no-window -gpu ${{ startsWith(matrix.part, 'a11y') && 'swangle_indirect' || 'swiftshader_indirect' }} -no-snapshot -noaudio -no-boot-anim -show-kernel -verbose > /tmp/emulator.log 2>&1"
           script: bash scripts/smoke.sh ${{ matrix.api }} ${{ matrix.part }}
 
       - name: Keep the logs and screenshots

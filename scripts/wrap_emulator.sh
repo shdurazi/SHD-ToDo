@@ -16,4 +16,5 @@ echo "emulator launcher ended with status $S at $(date +%T)" >> /tmp/emulator-ex
 exit $S
 WRAP
 sudo chmod +x "$EMU"
-"$EMU" -version 2>&1 | head -3
+ls -la "$EMU" "$EMU.real"
+: > /tmp/emulator-exit.log # the runner starts the emulator after this script
