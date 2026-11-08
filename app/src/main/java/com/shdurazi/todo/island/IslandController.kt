@@ -196,6 +196,9 @@ object IslandController {
     private val closeCard = Runnable { collapseCard() }
     private val introOpen = Runnable { openCard(HOLD_MS) }
 
+    /** Takes the island down once it has faded out. A timer rather than the fade's end: a fade that is cancelled never ends. */
+    private val detachAfterFade = Runnable { if (fading) detach("faded out") }
+
     private val tick = Runnable {
         tickScheduled = false
         val v = view
@@ -303,6 +306,7 @@ object IslandController {
 
         if (fading) {
             fading = false
+            main.removeCallbacks(detachAfterFade)
             v.setAppearInstant()
             card?.setAppearInstant()
         }
@@ -548,6 +552,7 @@ object IslandController {
     // ---------------------------------------------------------------- opening and closing the card
     private fun openCard(hold: Long) {
         val v = view ?: return
+        if (fading) return
         main.removeCallbacks(closeCard)
         val c = card
         if (c == null) {
@@ -666,14 +671,20 @@ object IslandController {
         main.removeCallbacks(closeCard)
         main.removeCallbacks(introOpen)
         Log.i(TAG, "fade out")
-        // whichever window is showing fades; the other one is covered or empty
-        val c = card
-        if (c != null) c.fadeOut { detach("faded out") } else v.fadeOut { detach("faded out") }
+        // Both windows fade together: the card's window may go away while it fades (the card closing into the pill), and
+        // the pill's window then carries on with the fade where the card's left off. The fade's own end is not relied on
+        // (a window that is removed cancels it), a timer takes the island down.
+        v.fadeOut { }
+        card?.fadeOut { }
+        val ctx = app
+        val fadeMs = if (ctx != null) 240L * animationScale(ctx).toLong().coerceAtLeast(1L) else 240L
+        main.postDelayed(detachAfterFade, fadeMs + 120L)
     }
 
     private fun detach(reason: String) {
         main.removeCallbacks(closeCard)
         main.removeCallbacks(introOpen)
+        main.removeCallbacks(detachAfterFade)
         removeCard()
         val v = view
         if (v != null) {
