@@ -762,6 +762,10 @@ object IslandController {
         val cardTop = if (overlayHost) max(top, statusBar + 4f * d) else top
         val card = RectF(ccx - half, cardTop, ccx + half, cardTop + IslandMetrics.cardHeight(cardW))
         val titleRight = if (overlayHost) card.right - 74f / 1008f * cardW else hole.left - 10f * d
-        return IslandView.Geo(card, pill, hole, d, hole.centerY(), titleRight, !(real != null && centred))
+        val virtualHole = !(real != null && centred)
+        // next to a real camera the pill's content sits at the camera's height; with an imaginary hole there is nothing to
+        // line up with, so it sits in the middle of the pill (which reaches below the status bar in the overlay window)
+        val contentY = if (virtualHole) pill.centerY() else hole.centerY()
+        return IslandView.Geo(card, pill, hole, d, contentY, titleRight, virtualHole)
     }
 }
