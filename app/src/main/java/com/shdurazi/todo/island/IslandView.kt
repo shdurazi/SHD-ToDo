@@ -457,7 +457,13 @@ class IslandView(context: Context) : View(context) {
             drawCard(canvas, g, m, now, ce * a)
             canvas.restore()
         }
-        if (cc > 0.01f) drawCompact(canvas, g, m, now, cc)
+        if (cc > 0.01f) {
+            // the content stays inside the pill while the pill changes size (the time must not poke out of its end)
+            canvas.save()
+            canvas.clipPath(body)
+            drawCompact(canvas, g, m, now, cc)
+            canvas.restore()
+        }
         canvas.restore()
 
         // keep animating while the card is open (the glow breathes); the pill is redrawn by the controller every second
