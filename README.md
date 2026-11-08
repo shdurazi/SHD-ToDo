@@ -61,27 +61,35 @@ Open **Settings › Island** in the app.
 1. Switch *Focus island* on and allow **Display over other apps**. If that switch is greyed out (Android locks it for an
    APK that did not come from a store), open *App info › ⋮ › Allow restricted settings* first and try again. The island
    now shows over your apps while a focus session runs and ToDo is not in front. Android draws the status bar *above*
-   such windows, so taps on the camera area itself go to the status bar: the closed island reaches a little below the bar
-   and that lower edge takes the tap, and the opened card hangs under the status bar so that its icons do not cover it. A
+   such windows, so taps on the camera area itself go to the status bar: the closed island is drawn around the camera,
+   and an invisible strip of its window reaches a few dp under the bar, right below the island; that strip takes the tap.
+   The opened card hangs under the status bar so that its icons do not cover it. A
    camera hole near the middle of the screen is wrapped by the island; on a phone without one (or with the hole in a
    corner) the island sits at the top centre.
 2. *Preview* shows the island without a running session.
 
-**Island size (Settings › Island size).** The status bar paints its own icons (alarm, headphones, Wi-Fi, signal...) over
-the island, and an app cannot look at them without an accessibility service or notification access, which Google Play
-Protect blocks (see below). So the island goes by what the phone reports to any app, and gets smaller when something
-that would be a status bar icon next to the camera is on:
+**Island size (Settings › Island size).** *Small*, *Medium* (default) or *Large*: how big the island is around the camera.
+Medium is a capsule 32 dp tall (the camera plus a few dp of black on every side) and about 112 dp wide next to a 22 dp
+camera; Small is 18 % lower and Large 20 % higher, and the ring, the time and the ears of the pill grow and shrink with
+it. The island is drawn around the camera and no longer hangs below the status bar; only an invisible strip of its window
+does, to be tapped (see above). The smallest size is limited by the camera: the pill stays at least 2 dp taller than the
+hole on every side.
 
-| Size | What it looks like |
+**Island layout (Settings › Island layout).** The status bar paints its own icons (alarm, headphones, Wi-Fi, signal...) over
+the island, and an app cannot look at them without an accessibility service or notification access, which Google Play
+Protect blocks (see below). So the island goes by what the phone reports to any app, and takes another layout when
+something that would be a status bar icon next to the camera is on:
+
+| Layout | What it looks like |
 |---|---|
 | *Wide* | the ring left of the camera, the time right of it (the Anchor picture) |
 | *Left* | the ring and the time both left of the camera, the right half pulled in |
-| *Small* | the ring alone |
+| *Ring* | the ring alone |
 | *Auto* (default) | *Wide* when nothing is reported, *Left* as soon as there is an alarm, connected headphones, Wi-Fi, a VPN, Do Not Disturb or silent mode |
 
 It changes with a short slide (getting smaller at once, getting wider after about eight seconds of calm, so that an icon
 that comes and goes does not make it pump). Settings says what Auto sees right now. The guess is only a guess: it cannot
-know the notification icons on the left, or how wide your phone's status bar icons are. If it is wrong, pick a size
+know the notification icons on the left, or how wide your phone's status bar icons are. If it is wrong, pick a layout
 yourself. (Above the status bar, in the debug build's accessibility window, nothing is in the way and the island is
 always wide. Right-to-left status bars, where the icons sit on the other side, are not handled.)
 
@@ -180,25 +188,32 @@ Typeface: [Inter](https://rsms.me/inter/) (SIL Open Font License, see `licenses/
 1. فعّل *Focus island* واسمح بـ **Display over other apps**. إذا كان المفتاح باهتاً (أندرويد يقفله للتطبيقات التي لم تأتِ من
    متجر) افتح *معلومات التطبيق ← ⋮ ← السماح بالإعدادات المقيّدة* ثم ارجع وجرّب. بعدها تظهر الجزيرة فوق التطبيقات أثناء جلسة
    التركيز عندما لا يكون ToDo مفتوحاً. أندرويد يرسم شريط الحالة *فوق* هذا النوع من النوافذ، لذلك الضغط على منطقة الكاميرا
-   نفسها يذهب لشريط الحالة: الجزيرة المغلقة تنزل قليلاً تحت الشريط وهذه الحافة السفلية هي التي تستقبل الضغط، والبطاقة
-   المفتوحة تتدلى تحت شريط الحالة حتى لا تغطيها أيقوناته. إذا كانت فتحة الكاميرا قرب منتصف الشاشة تلتف الجزيرة حولها، وإلا
+   نفسها يذهب لشريط الحالة: الجزيرة المغلقة مرسومة حول الكاميرا، ويمتد شريط غير مرئي من نافذتها بضعة dp تحت الشريط مباشرة
+   تحتها، وهذا الشريط هو الذي يستقبل الضغط، والبطاقة المفتوحة تتدلى تحت شريط الحالة حتى لا تغطيها أيقوناته. إذا كانت
+   فتحة الكاميرا قرب منتصف الشاشة تلتف الجزيرة حولها، وإلا
    (لا توجد فتحة أو هي في الزاوية) تظهر في أعلى المنتصف.
 2. زر *Preview* يعرض الجزيرة بدون جلسة تركيز.
 
-**حجم الجزيرة (Settings ‹ Island size).** شريط الحالة يرسم أيقوناته (المنبّه، السماعات، الواي فاي، الشبكة...) فوق الجزيرة،
-ولا يستطيع التطبيق رؤيتها بدون خدمة إمكانية وصول أو وصول للإشعارات، وهذان يحجبهما Google Play Protect (انظر أدناه). لذلك
-تعتمد الجزيرة على ما يخبر به الهاتف أي تطبيق، وتصغر عندما يكون شيء مما يظهر كأيقونة في شريط الحالة قرب الكاميرا شغّالاً:
+**حجم الجزيرة (Settings ‹ Island size).** *Small* أو *Medium* (الافتراضي) أو *Large*: مقدار كبر الجزيرة حول الكاميرا. حجم
+Medium كبسولة ارتفاعها 32 dp (الكاميرا مع بضعة dp من السواد حولها) وعرضها نحو 112 dp بجانب كاميرا قطرها 22 dp؛ و*Small* أقل
+بنسبة 18٪ و*Large* أكثر بنسبة 20٪، وتكبر الحلقة والوقت وجانبا الكبسولة وتصغر معها. والجزيرة مرسومة حول الكاميرا ولم تعد
+تتدلى تحت شريط الحالة؛ الذي يمتد تحته هو شريط غير مرئي من نافذتها للضغط فقط (انظر أعلاه). وأصغر حجم تحدّه الكاميرا: تبقى
+الكبسولة أعلى من الفتحة بمقدار 2 dp على الأقل من كل جهة.
 
-| الحجم | شكله |
+**شكل الجزيرة (Settings ‹ Island layout).** شريط الحالة يرسم أيقوناته (المنبّه، السماعات، الواي فاي، الشبكة...) فوق الجزيرة،
+ولا يستطيع التطبيق رؤيتها بدون خدمة إمكانية وصول أو وصول للإشعارات، وهذان يحجبهما Google Play Protect (انظر أدناه). لذلك
+تعتمد الجزيرة على ما يخبر به الهاتف أي تطبيق، وتتخذ شكلاً آخر عندما يكون شيء مما يظهر كأيقونة في شريط الحالة قرب الكاميرا شغّالاً:
+
+| الشكل | وصفه |
 |---|---|
 | *Wide* | الحلقة يسار الكاميرا والوقت يمينها (شكل Anchor) |
 | *Left* | الحلقة والوقت كلاهما يسار الكاميرا، والنصف الأيمن ينكمش |
-| *Small* | الحلقة فقط |
+| *Ring* | الحلقة فقط |
 | *Auto* (الافتراضي) | *Wide* إذا لم يُبلَّغ بشيء، و*Left* بمجرد وجود منبّه أو سماعات متصلة أو واي فاي أو VPN أو عدم الإزعاج أو الوضع الصامت |
 
-يتغير الحجم بانزلاق قصير (يصغر فوراً، ويكبر بعد نحو ثماني ثوانٍ من الهدوء حتى لا «تنبض» الجزيرة إذا كانت أيقونة تظهر وتختفي).
+يتغير الشكل بانزلاق قصير (يصغر فوراً، ويكبر بعد نحو ثماني ثوانٍ من الهدوء حتى لا «تنبض» الجزيرة إذا كانت أيقونة تظهر وتختفي).
 والإعدادات تقول ما الذي يراه Auto الآن. وهو مجرد تقدير: لا يعرف أيقونات الإشعارات على اليسار ولا عرض أيقونات شريط الحالة
-في هاتفك. إذا أخطأ فاختر الحجم بنفسك. (فوق شريط الحالة، في نافذة إمكانية الوصول لنسخة debug، لا شيء في الطريق فتبقى
+في هاتفك. إذا أخطأ فاختر الشكل بنفسك. (فوق شريط الحالة، في نافذة إمكانية الوصول لنسخة debug، لا شيء في الطريق فتبقى
 الجزيرة واسعة دائماً. وشريط الحالة من اليمين لليسار، حيث تكون الأيقونات في الجهة الأخرى، غير مدعوم.)
 
 وأثناء تفعيل الجزيرة يصير إشعار التركيز إشعاراً دائماً عادياً (بدون شريحة Live Update) حتى لا تتعارض الكبسولة النظامية

@@ -10,7 +10,6 @@ import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.provider.Settings
-import kotlin.math.min
 
 /**
  * How much of the island fits beside the camera.
@@ -20,7 +19,7 @@ import kotlin.math.min
  * install such an app from a browser), so it goes by what the phone tells any app: an alarm is set, headphones are
  * connected, Wi-Fi is on... Each of those is an icon in the right half of the bar, close to the camera.
  *
- * Three sizes, from wide to small:
+ * Three layouts, from wide to small (how big they are is a separate setting, [IslandPrefs.scale]):
  *  - [WIDE]: the ring left of the camera and the time right of it, as in the Anchor picture;
  *  - [LEFT]: the ring and the time both left of the camera, the right half pulled in;
  *  - [RING]: the ring alone, left of the camera.
@@ -36,13 +35,17 @@ object IslandFit {
     const val CHOICE_LEFT = 2
     const val CHOICE_RING = 3
 
-    // Distances in dp.
-    private const val POD = 62f // each half of the wide pill, from the camera's edge to the end of the pill
-    private const val END = 8f // the end of the pill to the ring
+    // Distances in island units. The pill is DESIGN_H units tall: 32 dp next to a 22 dp camera at the medium size (see
+    // IslandController.computeGeo), and everything below grows and shrinks with it, so that one setting resizes the island.
+    const val DESIGN_H = 32f
+    const val RING_D = 20f // the ring's diameter
+    const val TEXT = 12.5f // the countdown's text size
+    private const val POD = 45f // each half of the wide pill, from the camera's edge to the end of the pill
+    private const val END = 7f // the end of the pill to the ring
     private const val GAP = 6f // the ring to the time
-    private const val SLOT = 46f // the room the time gets when it sits left of the camera
-    private const val NEAR = 8f // the camera to the nearest thing beside it
-    private const val TIGHT = 8f // the right half when it is pulled in: a little black around the camera
+    private const val SLOT = 36f // the room the time gets when it sits left of the camera
+    private const val NEAR = 6f // the camera to the nearest thing beside it
+    private const val TIGHT = 6f // the right half when it is pulled in: a little black around the camera
 
     fun name(mode: Int): String = when (mode) {
         WIDE -> "wide"
@@ -69,42 +72,43 @@ object IslandFit {
         }
     }
 
-    fun ringD(pillH: Float, d: Float): Float = min(pillH - 12f * d, 24f * d)
+    /** The ring's diameter in pixels; [k] is the number of pixels in one island unit (the pill's height / [DESIGN_H]). */
+    fun ringD(k: Float): Float = RING_D * k
 
     /** How far the pill reaches left of the camera's left edge in this size. */
-    fun leftEar(mode: Int, ringD: Float, d: Float): Float = when (mode) {
-        WIDE -> POD * d
-        LEFT -> END * d + ringD + GAP * d + SLOT * d + NEAR * d
-        else -> END * d + ringD + NEAR * d
+    fun leftEar(mode: Int, k: Float): Float = when (mode) {
+        WIDE -> POD * k
+        LEFT -> (END + RING_D + GAP + SLOT + NEAR) * k
+        else -> (END + RING_D + NEAR) * k
     }
 
     /** How far the pill reaches right of the camera's right edge in this size. */
-    fun rightEar(mode: Int, d: Float): Float = if (mode == WIDE) POD * d else TIGHT * d
+    fun rightEar(mode: Int, k: Float): Float = if (mode == WIDE) POD * k else TIGHT * k
 
     /** Fills [out] with where everything goes in [mode], around the camera hole [hole] (screen pixels). */
-    fun fill(mode: Int, hole: RectF, pillH: Float, d: Float, out: Lay) {
-        val rd = ringD(pillH, d)
-        out.leftEar = leftEar(mode, rd, d)
-        out.rightEar = rightEar(mode, d)
-        val slotX = hole.left - NEAR * d - SLOT * d / 2f
+    fun fill(mode: Int, hole: RectF, k: Float, out: Lay) {
+        val rd = ringD(k)
+        out.leftEar = leftEar(mode, k)
+        out.rightEar = rightEar(mode, k)
+        val slotX = hole.left - NEAR * k - SLOT * k / 2f
         when (mode) {
             WIDE -> {
-                out.ringX = hole.left - POD * d / 2f
-                out.timeX = hole.right + POD * d / 2f
-                out.timeRoom = (POD - 12f) * d
+                out.ringX = hole.left - POD * k / 2f
+                out.timeX = hole.right + POD * k / 2f
+                out.timeRoom = (POD - 10f) * k
                 out.timeA = 1f
             }
             LEFT -> {
-                out.ringX = hole.left - out.leftEar + END * d + rd / 2f
+                out.ringX = hole.left - out.leftEar + END * k + rd / 2f
                 out.timeX = slotX
-                out.timeRoom = SLOT * d
+                out.timeRoom = SLOT * k
                 out.timeA = 1f
             }
             else -> {
-                out.ringX = hole.left - NEAR * d - rd / 2f
+                out.ringX = hole.left - NEAR * k - rd / 2f
                 // the time's place of the LEFT size, so that going between the two only fades it
                 out.timeX = slotX
-                out.timeRoom = SLOT * d
+                out.timeRoom = SLOT * k
                 out.timeA = 0f
             }
         }
@@ -127,8 +131,7 @@ object IslandFit {
     /** A sentence for the settings: what Auto goes by right now. */
     fun describe(context: Context): String {
         val g = guess(context)
-        val size = if (g.icons == 0) "Wide" else "Left"
-        return if (g.icons == 0) "Right now it sees nothing beside the camera, so Auto picks $size." else "Right now it sees ${g.what}, so Auto picks $size."
+        return if (g.icons == 0) "Right now: nothing reported, so Auto picks Wide." else "Right now: ${g.what}. Auto picks Left."
     }
 
     @Suppress("DEPRECATION") // allNetworks: the one call that also lists the Wi-Fi when the phone is using mobile data
@@ -205,6 +208,21 @@ object IslandFit {
                 "wide" -> CHOICE_WIDE
                 "left" -> CHOICE_LEFT
                 "ring" -> CHOICE_RING
+                else -> -1
+            }
+        } catch (e: Throwable) {
+            -1
+        }
+    }
+
+    /** `adb shell settings put global todo_island_scale small|medium|large`: the emulator test picks a size this way. */
+    fun debugScale(context: Context): Int {
+        if (!debuggable(context)) return -1
+        return try {
+            when (Settings.Global.getString(context.contentResolver, "todo_island_scale")) {
+                "small" -> IslandPrefs.SCALE_SMALL
+                "medium" -> IslandPrefs.SCALE_MEDIUM
+                "large" -> IslandPrefs.SCALE_LARGE
                 else -> -1
             }
         } catch (e: Throwable) {

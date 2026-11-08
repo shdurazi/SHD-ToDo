@@ -171,6 +171,20 @@ island_sizes() { # island_sizes <t> <film: yes|no>: the island in its other size
     adb logcat -d -s ToDoIsland:I | grep -E "attach host" | cut -c1-300 | tail -1
   done
 
+  stage "4g. the island's size: small and large, in the wide layout (the main test runs medium), and the card out of them"
+  adb shell settings put global todo_island_fit wide
+  for s in small large; do
+    adb shell settings put global todo_island_scale "$s"
+    fresh_session
+    sleep 3
+    adb logcat -c
+    home_and_look "$t-scale-$s" "$t-island-scale-$s"
+    adb exec-out screencap -p > "$OUT/$t-scale-$s-closed.png"
+    top_shot "$OUT/$t-scale-$s-closed.png" "$t-island-scale-$s-closed"
+    adb logcat -d -s ToDoIsland:I | grep -E "attach host" | cut -c1-300 | tail -1
+  done
+  adb shell settings delete global todo_island_scale > /dev/null 2>&1
+
   stage "4e. Auto: the size follows the icons the phone reports (the test pretends 0, then 2, then 0 again)"
   adb shell settings put global todo_island_fit auto
   adb shell settings put global todo_island_icons 0
@@ -215,6 +229,7 @@ island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <motion: 
   # the island follows the icons of the status bar; the emulator has a Wi-Fi icon, so the main flow asks for the wide one
   adb shell settings put global todo_island_fit wide
   adb shell settings delete global todo_island_icons > /dev/null 2>&1
+  adb shell settings delete global todo_island_scale > /dev/null 2>&1
   cutout_set "$cfg"
   adb shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow
   echo "overlay permission: $(adb shell appops get "$PKG" SYSTEM_ALERT_WINDOW | tr -d '\r')"
@@ -326,6 +341,7 @@ island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <motion: 
   adb shell appops set "$PKG" SYSTEM_ALERT_WINDOW default > /dev/null 2>&1
   adb shell settings delete global todo_island_fit > /dev/null 2>&1
   adb shell settings delete global todo_island_icons > /dev/null 2>&1
+  adb shell settings delete global todo_island_scale > /dev/null 2>&1
   adb shell settings put global animator_duration_scale 0
   adb shell am force-stop "$PKG"
   adb logcat -d > "$OUT/logcat-island-$t-$part.txt"

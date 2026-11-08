@@ -450,7 +450,7 @@ object IslandController {
             TAG,
             "attach host=${host.name} pill=${g.pill.toShortString()} card=${g.card.toShortString()} " +
                 "cutout=${g.cutout.toShortString()} virtual=${g.virtualHole} density=${g.density} size=${IslandFit.name(g.fit)} " +
-                "(${fitNote})"
+                "(${fitNote}) body=${g.bodyH} scale=${IslandPrefs.scale(ctx)}"
         )
         return true
     }
@@ -788,7 +788,8 @@ object IslandController {
             if (moved) relayout()
             Log.i(
                 TAG,
-                "geometry changed: pill=${g.pill.toShortString()} card=${g.card.toShortString()} size=${IslandFit.name(g.fit)} ($fitNote)"
+                "geometry changed: pill=${g.pill.toShortString()} card=${g.card.toShortString()} size=${IslandFit.name(g.fit)} " +
+                    "($fitNote) body=${g.bodyH} scale=${IslandPrefs.scale(ctx)}"
             )
         }
     }
@@ -796,8 +797,8 @@ object IslandController {
     private fun sameGeo(a: IslandView.Geo, b: IslandView.Geo): Boolean = sameFrame(a, b) && a.fit == b.fit
 
     private fun sameFrame(a: IslandView.Geo, b: IslandView.Geo): Boolean =
-        abs(a.density - b.density) < 0.001f && abs(a.titleRight - b.titleRight) < 0.5f && same(a.pill, b.pill) &&
-            same(a.card, b.card) && same(a.cutout, b.cutout)
+        abs(a.density - b.density) < 0.001f && abs(a.titleRight - b.titleRight) < 0.5f && abs(a.bodyH - b.bodyH) < 0.5f &&
+            same(a.pill, b.pill) && same(a.card, b.card) && same(a.cutout, b.cutout)
 
     private fun same(a: RectF, b: RectF): Boolean =
         abs(a.left - b.left) < 0.5f && abs(a.top - b.top) < 0.5f && abs(a.right - b.right) < 0.5f && abs(a.bottom - b.bottom) < 0.5f
@@ -841,23 +842,29 @@ object IslandController {
         }
 
         val margin = 8f * d
-        val pillH = (hole.height() + 12f * d).coerceIn(30f * d, 38f * d)
-        val top = max(0f, hole.centerY() - pillH / 2f)
-        var bottom = top + pillH
-        // under the status bar the part of the pill inside the bar can't be tapped: let a strip of it hang below
+        // The pill is as tall as the camera needs plus a little black around it (32 dp next to a 22 dp camera), made bigger
+        // or smaller by the size the person picked, but never tighter than 2 dp around the camera (a cutout much taller than
+        // a camera is not wrapped any more than 38 dp). Everything in the pill (ring, time, ears) follows that height.
+        val baseH = (hole.height() + 10f * d).coerceIn(28f * d, 36f * d)
+        val bodyH = max(baseH * IslandPrefs.scaleFactor(ctx), min(hole.height() + 4f * d, 38f * d))
+        val k = bodyH / IslandFit.DESIGN_H
+        val top = max(0f, hole.centerY() - bodyH / 2f)
+        var bottom = top + bodyH
+        // Under the status bar the part of the pill inside the bar can't be tapped (the bar takes the touches). The frame
+        // therefore reaches below the bar, which gives a strip right under the pill that can be; the pill itself is drawn in
+        // the top part of the frame, around the camera.
         if (overlayHost) bottom = max(bottom, statusBar + 8f * d)
 
         // The pill's frame is the widest the pill gets. Below the status bar the pill follows the icons next to the camera
-        // (IslandFit), so its frame reaches as far left as the "left" size does; above the bar it is always the wide pill.
-        val ringD = IslandFit.ringD(bottom - top, d)
-        var leftEar = IslandFit.leftEar(IslandFit.WIDE, ringD, d)
-        val rightEar = IslandFit.rightEar(IslandFit.WIDE, d)
-        if (overlayHost) leftEar = max(leftEar, IslandFit.leftEar(IslandFit.LEFT, ringD, d))
+        // (IslandFit), so its frame reaches as far left as the "left" layout does; above the bar it is always the wide pill.
+        var leftEar = IslandFit.leftEar(IslandFit.WIDE, k)
+        val rightEar = IslandFit.rightEar(IslandFit.WIDE, k)
+        if (overlayHost) leftEar = max(leftEar, IslandFit.leftEar(IslandFit.LEFT, k))
         var usedFit = if (overlayHost) wantFit else IslandFit.WIDE
         if (hole.left - leftEar < margin || hole.right + rightEar > sw - margin) {
-            // no room for the other sizes on a screen this narrow: stay with the wide pill, as small as the screen needs
+            // no room for the other layouts on a screen this narrow: stay with the wide pill, as small as the screen needs
             usedFit = IslandFit.WIDE
-            leftEar = min(IslandFit.leftEar(IslandFit.WIDE, ringD, d), hole.left - margin)
+            leftEar = min(IslandFit.leftEar(IslandFit.WIDE, k), hole.left - margin)
         }
         val pill = RectF(hole.left - leftEar, top, min(hole.right + rightEar, sw - margin), bottom)
 
@@ -870,9 +877,8 @@ object IslandController {
         val card = RectF(ccx - half, cardTop, ccx + half, cardTop + IslandMetrics.cardHeight(cardW))
         val titleRight = if (overlayHost) card.right - 74f / 1008f * cardW else hole.left - 10f * d
         val virtualHole = !(real != null && centred)
-        // next to a real camera the pill's content sits at the camera's height; with an imaginary hole there is nothing to
-        // line up with, so it sits in the middle of the pill (which reaches below the status bar in the overlay window)
-        val contentY = if (virtualHole) pill.centerY() else hole.centerY()
-        return IslandView.Geo(card, pill, hole, d, contentY, titleRight, virtualHole, usedFit)
+        // the pill is drawn around the camera (the real one, or the imaginary one at the top centre), and so is its content
+        val contentY = hole.centerY()
+        return IslandView.Geo(card, pill, hole, d, contentY, titleRight, virtualHole, usedFit, bodyH)
     }
 }

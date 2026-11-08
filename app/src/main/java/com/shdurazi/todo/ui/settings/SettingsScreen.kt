@@ -145,6 +145,7 @@ fun SettingsScreen(ui: UiState, data: AppData, h24: Boolean, onBack: () -> Unit)
     }
     var islandOn by remember { mutableStateOf(IslandPrefs.enabled(ctx)) }
     var fitChoice by remember { mutableStateOf(IslandPrefs.fitSaved(ctx)) }
+    var scaleChoice by remember { mutableStateOf(IslandPrefs.scaleSaved(ctx)) }
     val overlayOk = remember(refresh) { IslandController.canOverlay(ctx) }
     val a11yOn = remember(refresh) { IslandController.accessibilityOn() }
     val a11yDeclared = remember { IslandController.accessibilityDeclared(ctx) } // debug builds only
@@ -366,13 +367,40 @@ fun SettingsScreen(ui: UiState, data: AppData, h24: Boolean, onBack: () -> Unit)
 
             SectionLabel("Island size")
             ChipRow {
-                val sizes = listOf(
+                val scales = listOf(
+                    "Small" to IslandPrefs.SCALE_SMALL,
+                    "Medium" to IslandPrefs.SCALE_MEDIUM,
+                    "Large" to IslandPrefs.SCALE_LARGE
+                )
+                for ((label, choice) in scales) {
+                    ChoiceChip(label, scaleChoice == choice, accent) {
+                        scaleChoice = choice
+                        IslandPrefs.setScale(ctx, choice)
+                        IslandController.fitChanged(ctx)
+                        refresh += 1
+                        if (overlayOk || a11yOn) IslandController.preview(ctx)
+                    }
+                }
+            }
+            Txt(
+                text = "How big the island is around the camera. Medium is the default, Small hugs the camera, Large gives " +
+                    "the ring and the time more room.",
+                size = 13.sp,
+                color = Ink.TextDim,
+                maxLines = 4,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp)
+            )
+
+            SectionLabel("Island layout")
+            ChipRow {
+                val layouts = listOf(
                     "Auto" to IslandFit.AUTO,
                     "Wide" to IslandFit.CHOICE_WIDE,
                     "Left" to IslandFit.CHOICE_LEFT,
-                    "Small" to IslandFit.CHOICE_RING
+                    "Ring" to IslandFit.CHOICE_RING
                 )
-                for ((label, choice) in sizes) {
+                for ((label, choice) in layouts) {
                     ChoiceChip(label, fitChoice == choice, accent) {
                         fitChoice = choice
                         IslandPrefs.setFit(ctx, choice)
@@ -386,8 +414,8 @@ fun SettingsScreen(ui: UiState, data: AppData, h24: Boolean, onBack: () -> Unit)
             Txt(
                 text = "The status bar paints its icons over the island, and ToDo can't see them. Auto goes by what the phone " +
                     "reports (an alarm, headphones, Wi-Fi, VPN, Do Not Disturb or silent mode) and pulls the island in when " +
-                    "icons sit beside the camera. Wide is the Anchor look, Left puts the ring and the time left of the camera, " +
-                    "Small keeps only the ring. If Auto guesses wrong, pick the size yourself. $autoNow",
+                    "icons sit beside the camera. Wide has the ring left and the time right of the camera, Left puts both " +
+                    "left of it, Ring keeps only the ring. If Auto guesses wrong, pick the layout yourself. $autoNow",
                 size = 13.sp,
                 color = Ink.TextDim,
                 maxLines = 12,

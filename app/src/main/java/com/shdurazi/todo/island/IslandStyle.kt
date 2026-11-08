@@ -35,8 +35,41 @@ object IslandPrefs {
     private const val KEY_INTRO = "intro_for"
     private const val KEY_FAILED = "failed"
     private const val KEY_FIT = "fit"
+    private const val KEY_SCALE = "scale"
+
+    /** How big the island is: [SCALE_MEDIUM] unless the person picked another one in the settings. */
+    const val SCALE_SMALL = 0
+    const val SCALE_MEDIUM = 1
+    const val SCALE_LARGE = 2
 
     private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+
+    fun scaleSaved(context: Context): Int = try {
+        prefs(context).getInt(KEY_SCALE, SCALE_MEDIUM).coerceIn(SCALE_SMALL, SCALE_LARGE)
+    } catch (e: Exception) {
+        SCALE_MEDIUM
+    }
+
+    /** The size to go by: the saved one, or in a debug build the one the emulator test set. */
+    fun scale(context: Context): Int {
+        val test = IslandFit.debugScale(context)
+        return if (test >= 0) test else scaleSaved(context)
+    }
+
+    fun setScale(context: Context, scale: Int) {
+        try {
+            prefs(context).edit().putInt(KEY_SCALE, scale).apply()
+        } catch (e: Exception) {
+            // not worth failing over
+        }
+    }
+
+    /** The pill's height relative to the medium size. */
+    fun scaleFactor(context: Context): Float = when (scale(context)) {
+        SCALE_SMALL -> 0.82f
+        SCALE_LARGE -> 1.2f
+        else -> 1f
+    }
 
     /** The size the person picked in the settings ([IslandFit.AUTO] unless they chose one). */
     fun fitSaved(context: Context): Int = try {
