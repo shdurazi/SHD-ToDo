@@ -108,19 +108,11 @@
                 android:resource="@xml/nextup_widget_info" />
         </receiver>
 
-        <!-- Optional host of the island: its overlay window sits above the status bar and on the lock screen -->
-        <service
-            android:name=".island.IslandAccessibilityService"
-            android:exported="true"
-            android:label="@string/island_a11y_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/island_accessibility" />
-        </service>
+        <!--
+            Deliberately no accessibility service here: Google Play Protect refuses to install an app that declares one when
+            it comes from a browser or a file manager ("App blocked to protect your device"), and that includes the release
+            APK this project hands out. The optional accessibility host of the island lives in src/debug/AndroidManifest.xml.
+        -->
 
         <!-- Quick Settings tile: "New To Do" -->
         <service

@@ -58,28 +58,33 @@ older one and keeps your data.
 
 Open **Settings › Island** in the app.
 
-1. Switch *Focus island* on and allow **Display over other apps**. The island now shows over your apps. Android draws the
-   status bar *above* such windows, so taps on the camera area itself go to the status bar: the closed island reaches a
-   little below the bar and that lower edge takes the tap, and the opened card hangs under the status bar so that its icons
-   do not cover it. A camera hole near the middle of the screen is wrapped by the island; on a phone without one (or with the
-   hole in a corner) the island sits at the top centre.
-2. For the full look — above the status bar, tappable, also on the lock screen — turn on the **ToDo island**
-   accessibility service as well (*Settings › Accessibility › Installed apps*). If it is greyed out, open *App info › ⋮ ›
-   Allow restricted settings* first. The service only gives ToDo a window to draw in: it declares no content access, so it
-   cannot read your screen. Some banking apps refuse to run while *any* accessibility service is on.
-3. *Preview* shows the island without a running session.
+1. Switch *Focus island* on and allow **Display over other apps**. If that switch is greyed out (Android locks it for an
+   APK that did not come from a store), open *App info › ⋮ › Allow restricted settings* first and try again. The island
+   now shows over your apps while a focus session runs and ToDo is not in front. Android draws the status bar *above*
+   such windows, so taps on the camera area itself go to the status bar: the closed island reaches a little below the bar
+   and that lower edge takes the tap, and the opened card hangs under the status bar so that its icons do not cover it. A
+   camera hole near the middle of the screen is wrapped by the island; on a phone without one (or with the hole in a
+   corner) the island sits at the top centre.
+2. *Preview* shows the island without a running session.
 
 While the island is on, the focus notification is a normal ongoing notification (no Live Update chip), so the system
 capsule and the island do not fight over the same spot. Switch the island off to get the Live Update back.
 
+**Why there is no accessibility service in the release APK.** An accessibility service may draw above the status bar and
+on the lock screen, and the debug build still has one as an optional second host of the island (*Settings › Accessibility
+› ToDo island*; it declares no content access and cannot read the screen). But Google Play Protect refuses to install an
+app that declares an accessibility service (or a notification listener, or SMS permissions) when the APK comes from a
+browser or a file manager in some countries: the phone shows *"App blocked to protect your device"* and offers no way
+around it. The release APK therefore leaves the service out, and the build job fails if it ever comes back in
+(`src/debug/AndroidManifest.xml` is the only place that declares it).
+
 **How far this has been tested.** In CI the island runs on Android 14 and Android 16 emulators (debug and release builds,
 with emulated camera holes of three sizes): the pop-in, the spring opening, the turning dial with its glow, the closing,
-taps on the closed island and on the card, the *Preview* row, and — with the accessibility service — the window above the
-status bar, also on the lock screen. It has **not** been run on a real phone with a real camera hole, so spacing against the
-real status bar and the manufacturer's battery rules may still differ. If the accessibility mode misbehaves on your phone,
-switch the service off: the first mode works without it. (The emulator itself froze within minutes in the accessibility
-mode when it used its `swiftshader_indirect` graphics, and never with `swangle_indirect`; the CI therefore uses the latter
-for that part.)
+taps on the closed island and on the card, and the *Preview* row; the debug build also runs through the accessibility
+window above the status bar, including the lock screen. It has **not** been run on a real phone with a real camera hole,
+so spacing against the real status bar and the manufacturer's battery rules may still differ. (The emulator froze within
+minutes in the accessibility window when it used its `swiftshader_indirect` graphics and never with `swangle_indirect`,
+so the CI uses the latter for that part.)
 
 ### Build it yourself
 
@@ -104,7 +109,7 @@ are plain Kotlin without Android dependencies.
 app/src/main/java/com/shdurazi/todo
 ├── core/      data model, JSON, quick-add parser, timeline layout, queries, planner, repository
 ├── notify/    channels, notifications, alarm scheduling, receivers, Quick Settings tile
-├── island/    the focus island: hand-drawn view, window controller, accessibility host
+├── island/    the focus island: hand-drawn view, window controller, accessibility host (declared in debug builds only)
 ├── widget/    Tasks / Timeline / Next up widgets (Glance)
 └── ui/        theme, components, home, sheets, focus, settings
 ```
@@ -154,24 +159,27 @@ Typeface: [Inter](https://rsms.me/inter/) (SIL Open Font License, see `licenses/
 
 من التطبيق: **Settings ‹ Island**.
 
-1. فعّل *Focus island* واسمح بـ **Display over other apps**. بعدها تظهر الجزيرة فوق التطبيقات. أندرويد يرسم شريط الحالة
-   *فوق* هذا النوع من النوافذ، لذلك الضغط على منطقة الكاميرا نفسها يذهب لشريط الحالة: الجزيرة المغلقة تنزل قليلاً تحت
-   الشريط وهذه الحافة السفلية هي التي تستقبل الضغط، والبطاقة المفتوحة تتدلى تحت شريط الحالة حتى لا تغطيها أيقوناته.
-   إذا كانت فتحة الكاميرا قرب منتصف الشاشة تلتف الجزيرة حولها، وإلا (لا توجد فتحة أو هي في الزاوية) تظهر في أعلى
-   المنتصف.
-2. للشكل الكامل — فوق شريط الحالة، قابلة للضغط، وتظهر على شاشة القفل — فعّل أيضاً خدمة إمكانية الوصول **ToDo island**
-   (الإعدادات ← إمكانية الوصول ← التطبيقات المثبّتة). إذا كانت باهتة وغير قابلة للضغط افتح *معلومات التطبيق ← ⋮ ←
-   السماح بالإعدادات المقيّدة* أولاً. الخدمة فقط تعطي ToDo نافذة يرسم فيها ولا تطلب الوصول لمحتوى الشاشة فلا تقرأها.
-   بعض تطبيقات البنوك ترفض العمل ما دامت أي خدمة إمكانية وصول مفعّلة.
-3. زر *Preview* يعرض الجزيرة بدون جلسة تركيز.
+1. فعّل *Focus island* واسمح بـ **Display over other apps**. إذا كان المفتاح باهتاً (أندرويد يقفله للتطبيقات التي لم تأتِ من
+   متجر) افتح *معلومات التطبيق ← ⋮ ← السماح بالإعدادات المقيّدة* ثم ارجع وجرّب. بعدها تظهر الجزيرة فوق التطبيقات أثناء جلسة
+   التركيز عندما لا يكون ToDo مفتوحاً. أندرويد يرسم شريط الحالة *فوق* هذا النوع من النوافذ، لذلك الضغط على منطقة الكاميرا
+   نفسها يذهب لشريط الحالة: الجزيرة المغلقة تنزل قليلاً تحت الشريط وهذه الحافة السفلية هي التي تستقبل الضغط، والبطاقة
+   المفتوحة تتدلى تحت شريط الحالة حتى لا تغطيها أيقوناته. إذا كانت فتحة الكاميرا قرب منتصف الشاشة تلتف الجزيرة حولها، وإلا
+   (لا توجد فتحة أو هي في الزاوية) تظهر في أعلى المنتصف.
+2. زر *Preview* يعرض الجزيرة بدون جلسة تركيز.
 
 وأثناء تفعيل الجزيرة يصير إشعار التركيز إشعاراً دائماً عادياً (بدون شريحة Live Update) حتى لا تتعارض الكبسولة النظامية
 مع الجزيرة. أوقف الجزيرة لترجع Live Update.
 
-**ما الذي اختُبر.** تُشغَّل الجزيرة في CI على محاكيات أندرويد 14 و16 (نسخة debug ونسخة release، مع فتحات كاميرا
-مُحاكاة بثلاثة أحجام): الظهور، الفتح النابضي، القرص الدائر مع التوهج، الإغلاق، الضغط على الجزيرة المغلقة وعلى البطاقة،
-صف *Preview*، ومع خدمة إمكانية الوصول أيضاً النافذة فوق شريط الحالة وعلى شاشة القفل. **لم** تُجرَّب بعد على هاتف حقيقي
-بفتحة كاميرا حقيقية، فقد تختلف المسافات مع شريط الحالة الحقيقي وقيود البطارية عند الشركة المصنّعة. إذا تصرّف وضع
-إمكانية الوصول بشكل غريب على هاتفك فأوقف الخدمة: الوضع الأول يعمل بدونها. (المحاكي نفسه كان يتجمّد خلال دقائق في وضع
-إمكانية الوصول عندما يستخدم رسم `swiftshader_indirect`، ولم يتجمّد أبداً مع `swangle_indirect`؛ لذلك يستخدم CI الثاني
-لهذا الجزء.)
+**لماذا لا توجد خدمة إمكانية وصول في نسخة release.** خدمة إمكانية الوصول تستطيع الرسم فوق شريط الحالة وعلى شاشة القفل،
+ولا تزال نسخة debug تحتوي واحدة كمضيف ثانٍ اختياري للجزيرة (*Settings ‹ Accessibility ‹ ToDo island*؛ لا تطلب الوصول
+لمحتوى الشاشة ولا تقرأها). لكن Google Play Protect يرفض تثبيت أي تطبيق يعلن عن خدمة إمكانية وصول (أو مستمع إشعارات أو
+صلاحيات SMS) إذا جاء ملف APK من متصفح أو مدير ملفات في بعض الدول: يظهر على الهاتف *"App blocked to protect your device"*
+بلا أي خيار للتجاوز. لذلك تخلو نسخة release من الخدمة، ويفشل بناء GitHub Actions إذا عادت إليها
+(الملف `src/debug/AndroidManifest.xml` هو المكان الوحيد الذي يعلن عنها).
+
+**ما الذي اختُبر.** تُشغَّل الجزيرة في CI على محاكيات أندرويد 14 و16 (نسخة debug ونسخة release، مع فتحات كاميرا مُحاكاة
+بثلاثة أحجام): الظهور، الفتح النابضي، القرص الدائر مع التوهج، الإغلاق، الضغط على الجزيرة المغلقة وعلى البطاقة، وصف
+*Preview*؛ وتختبر نسخة debug أيضاً النافذة فوق شريط الحالة وعلى شاشة القفل عبر خدمة إمكانية الوصول. **لم** تُجرَّب بعد
+على هاتف حقيقي بفتحة كاميرا حقيقية، فقد تختلف المسافات مع شريط الحالة الحقيقي وقيود البطارية عند الشركة المصنّعة.
+(المحاكي كان يتجمّد خلال دقائق في نافذة إمكانية الوصول عندما يستخدم رسم `swiftshader_indirect` ولم يتجمّد أبداً مع
+`swangle_indirect`، لذلك يستخدم CI الثاني لهذا الجزء.)

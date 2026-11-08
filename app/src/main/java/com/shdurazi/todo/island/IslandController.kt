@@ -2,6 +2,7 @@ package com.shdurazi.todo.island
 
 import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
@@ -37,8 +38,9 @@ import kotlinx.coroutines.launch
  * Puts the island on the screen while a focus session runs and the app is not in front.
  *
  * Two windows can carry it:
- *  - the accessibility service's overlay (above the status bar, tappable, also on the lock screen), and
- *  - a plain "display over other apps" overlay (below the status bar, hidden on the lock screen).
+ *  - the accessibility service's overlay (above the status bar, tappable, also on the lock screen; debug builds only, see
+ *    [accessibilityDeclared]), and
+ *  - a plain "display over other apps" overlay (below the status bar, hidden on the lock screen): what the release APK uses.
  * The accessibility one wins when it is connected.
  *
  * Everything that touches a window runs on the main thread; [sync] and [refresh] may be called from anywhere.
@@ -130,6 +132,18 @@ object IslandController {
     fun active(context: Context): Boolean = IslandPrefs.usable(context) && (a11yUp || canOverlay(context))
 
     fun accessibilityOn(): Boolean = a11yUp
+
+    /**
+     * Does this build declare the optional accessibility host? Only the debug build does (see src/debug/AndroidManifest.xml):
+     * Google Play Protect blocks the installation of an app with an accessibility service that comes from a browser or a
+     * file manager. The class is named by a string on purpose, so that the release build can drop it completely.
+     */
+    fun accessibilityDeclared(context: Context): Boolean = try {
+        context.packageManager.getServiceInfo(ComponentName(context.packageName, "com.shdurazi.todo.island.IslandAccessibilityService"), 0)
+        true
+    } catch (e: Throwable) {
+        false
+    }
 
     fun canOverlay(context: Context): Boolean = try {
         Settings.canDrawOverlays(context)

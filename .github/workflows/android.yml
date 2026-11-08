@@ -60,6 +60,27 @@ jobs:
         run: |
           ./gradlew --stacktrace --console=plain :app:assembleRelease 2>&1 | tee -a build.log
 
+      # Google Play Protect refuses to install an APK that comes from a browser or a file manager when it declares one of these
+      # (the phone shows "App blocked to protect your device", without a way around it). The debug APK has the optional
+      # accessibility host of the island, the release APK must not.
+      - name: The release APK must not declare what Google Play Protect blocks
+        if: steps.release.outcome == 'success'
+        shell: bash
+        run: |
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          AAPT2=$(ls -d "$SDK"/build-tools/*/aapt2 | sort -V | tail -1)
+          echo "using $AAPT2"
+          "$AAPT2" dump xmltree app/build/outputs/apk/release/app-release.apk --file AndroidManifest.xml > release-manifest.txt
+          echo "permissions the release APK asks for:"
+          grep -o 'android\.permission\.[A-Z_]*' release-manifest.txt | sort -u
+          echo "services the release APK declares:"
+          grep -A12 'E: service' release-manifest.txt | grep -o 'android:name([^)]*)="[^"]*"' | sort -u
+          if grep -E 'BIND_ACCESSIBILITY_SERVICE|BIND_NOTIFICATION_LISTENER_SERVICE|RECEIVE_SMS|READ_SMS|android.accessibilityservice' release-manifest.txt; then
+            echo "::error::the release APK declares something Google Play Protect blocks (accessibility service, notification listener or SMS)"
+            exit 1
+          fi
+          echo "ok: no accessibility service, notification listener or SMS permission in the release APK"
+
       - name: Collect the APKs
         if: steps.debug.outcome == 'success'
         shell: bash
@@ -129,7 +150,7 @@ jobs:
       matrix:
         api: [34, 36]
         # Every part of the test gets an emulator of its own: when one stops answering, the others are not lost with it.
-        part: [base, overlay, a11y-debug, a11y-release]
+        part: [base, overlay, a11y-debug]
     steps:
       - uses: actions/checkout@v4
 

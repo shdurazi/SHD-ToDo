@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <!--
+            Debug builds only. Optional second host of the island: an accessibility service may add overlay windows that sit
+            above the status bar and on the lock screen. It is kept out of the release APK because Google Play Protect blocks
+            the installation of any app that declares an accessibility service when the APK comes from a browser or a file
+            manager. The service listens to nothing (see res/xml/island_accessibility.xml).
+        -->
+        <service
+            android:name=".island.IslandAccessibilityService"
+            android:exported="true"
+            android:label="@string/island_a11y_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/island_accessibility" />
+        </service>
+    </application>
+</manifest>

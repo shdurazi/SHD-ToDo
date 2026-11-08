@@ -145,6 +145,7 @@ fun SettingsScreen(ui: UiState, data: AppData, h24: Boolean, onBack: () -> Unit)
     var islandOn by remember { mutableStateOf(IslandPrefs.enabled(ctx)) }
     val overlayOk = remember(refresh) { IslandController.canOverlay(ctx) }
     val a11yOn = remember(refresh) { IslandController.accessibilityOn() }
+    val a11yDeclared = remember { IslandController.accessibilityDeclared(ctx) } // debug builds only
     val islandFailed = remember(refresh) { IslandPrefs.failed(ctx) }
     val notificationsOn = remember(refresh) { NotificationManagerCompat.from(ctx).areNotificationsEnabled() }
     val exactOk = remember(refresh) { ReminderEngine.canScheduleExact(ctx) }
@@ -310,19 +311,25 @@ fun SettingsScreen(ui: UiState, data: AppData, h24: Boolean, onBack: () -> Unit)
                     onTap = {
                         awaitingOverlay = true
                         openOverlaySettings(ctx)
-                    }
-                )
-                GroupDivider()
-                ValueRow(
-                    label = "Accessibility service",
-                    value = if (a11yOn) "On" else "Off — tap to set up",
-                    onTap = {
-                        openAccessibilitySettings(ctx)
-                        if (!a11yOn) {
-                            ui.showToast("Greyed out? Open App info › ⋮ › Allow restricted settings", "App info") { openAppInfo(ctx) }
+                        if (!overlayOk) {
+                            // an APK that did not come from a store starts with this switch locked on Android 13 and later
+                            ui.showToast("Switch greyed out? Open App info › ⋮ › Allow restricted settings", "App info") { openAppInfo(ctx) }
                         }
                     }
                 )
+                if (a11yDeclared) {
+                    GroupDivider()
+                    ValueRow(
+                        label = "Accessibility service",
+                        value = if (a11yOn) "On" else "Off — tap to set up",
+                        onTap = {
+                            openAccessibilitySettings(ctx)
+                            if (!a11yOn) {
+                                ui.showToast("Greyed out? Open App info › ⋮ › Allow restricted settings", "App info") { openAppInfo(ctx) }
+                            }
+                        }
+                    )
+                }
                 GroupDivider()
                 ValueRow(
                     label = "Preview",
@@ -338,9 +345,14 @@ fun SettingsScreen(ui: UiState, data: AppData, h24: Boolean, onBack: () -> Unit)
             }
             Txt(
                 text = "While a focus session runs and ToDo isn't open, it shows as an island around the camera, like Anchor. " +
-                    "Allow \"Display over other apps\" to see it over your apps. For the full look, above the status bar, tappable and " +
-                    "on the lock screen, also turn on the ToDo accessibility service: it only draws the island and cannot read your " +
-                    "screen, but some banking apps refuse to run while any accessibility service is on. " +
+                    "Allow \"Display over other apps\" to see it over your apps. " +
+                    (if (a11yDeclared) {
+                        "For the full look, above the status bar, tappable and on the lock screen, also turn on the ToDo " +
+                            "accessibility service: it only draws the island and cannot read your screen, but some banking " +
+                            "apps refuse to run while any accessibility service is on. "
+                    } else {
+                        ""
+                    }) +
                     "With the island on, the Live Update chip is not used." +
                     (if (islandFailed) " The island stopped after an error: switch it off and on again to retry." else ""),
                 size = 13.sp,

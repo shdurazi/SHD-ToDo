@@ -273,7 +273,7 @@ island_test() { # island_test <variant> <cutout> <lock screen: yes|no> <motion: 
   echo "::endgroup::"
 }
 
-GROUP="${2:-all}" # all | base | overlay | a11y-debug | a11y-release: CI gives every part its own emulator (one that vanishes costs one part)
+GROUP="${2:-all}" # all | base | overlay | a11y-debug: CI gives every part its own emulator (one that vanishes costs one part)
 want() { [ "$GROUP" = all ] || [ "$GROUP" = "$1" ]; }
 echo "part of the test on this emulator: $GROUP"
 settle 150
@@ -436,22 +436,19 @@ for variant in debug release; do
   cutout_set none
 done
 
-# The island in the accessibility window (above the status bar, on the lock screen): the emulators sometimes stop
-# answering in here (see scripts/probe.sh), which is why it has parts of its own.
-for variant in debug release; do
+# The island in the accessibility window (above the status bar, on the lock screen). Only the debug build has the service:
+# Google Play Protect blocks installing an app that declares one when the APK comes from a browser or a file manager, so the
+# release APK leaves it out (the build job checks that). The emulator needs the "swangle_indirect" graphics for this part:
+# on "swiftshader_indirect" it froze within minutes (see scripts/probe.sh).
+for variant in debug; do
   want "a11y-$variant" || continue
   guard "the accessibility window tests of the $variant build"
   adb uninstall "$PKG" > /dev/null 2>&1 || true
   adb install -r "dist/ToDo-$variant.apk" > /dev/null || { echo "RESULT[$variant]: install failed"; continue; }
   adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS > /dev/null 2>&1 || true
-  if [ "$variant" = debug ]; then
-    island_test "$variant" emu01 no yes a11y
-    island_test "$variant" hole yes no a11y
-    island_test "$variant" tall no no a11y
-  else
-    island_test "$variant" emu01 no no a11y
-    island_test "$variant" hole yes no a11y
-  fi
+  island_test "$variant" emu01 no yes a11y
+  island_test "$variant" hole yes no a11y
+  island_test "$variant" tall no no a11y
   cutout_set none
 done
 exit 0
